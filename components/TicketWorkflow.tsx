@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Ticket, TicketStatus, User } from '../types';
+import { Ticket, TicketStatus, User, TicketType } from '../types';
 import { Button } from './Button';
-import { X, Clock, CheckCircle, AlertCircle, Trash2, ZoomIn, RefreshCw, Download, MapPin, DollarSign, TrendingDown, TrendingUp, ArrowRight, ExternalLink, FileText, Image as ImageIcon } from 'lucide-react';
+import { X, Clock, CheckCircle, AlertCircle, Trash2, ZoomIn, RefreshCw, Download, MapPin, DollarSign, TrendingDown, TrendingUp, ExternalLink, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
+import { STATES_BR } from '../constants';
 
 interface TicketWorkflowProps {
   ticket: Ticket;
@@ -12,17 +13,34 @@ interface TicketWorkflowProps {
   onUpdateAttachment: (ticketId: string, file: File) => Promise<void>;
   onUpdateValue: (ticketId: string, value: number) => Promise<void>;
   onDelete: (ticketId: string) => Promise<void>;
+  onEditTicket: (ticketId: string, updatedData: Partial<Ticket>) => Promise<void>;
 }
 
-export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets, user, onClose, onUpdateStatus, onUpdateAttachment, onUpdateValue, onDelete }) => {
+export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets, user, onClose, onUpdateStatus, onUpdateAttachment, onUpdateValue, onDelete, onEditTicket }) => {
   const [newStatus, setNewStatus] = useState<TicketStatus>(ticket.currentStatus);
   const [note, setNote] = useState('');
   const [editValue, setEditValue] = useState<string>(ticket.value.toString());
   const [loading, setLoading] = useState(false);
   
+  // Image modal state
   const [showImageModal, setShowImageModal] = useState(false);
   const [isReplacingAttachment, setIsReplacingAttachment] = useState(false);
   const [newAttachment, setNewAttachment] = useState<File | null>(null);
+
+  // Edit Mode State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+      ardName: ticket.ardName,
+      coordinates: ticket.coordinates || '',
+      uf: ticket.uf,
+      city: ticket.city,
+      requester: ticket.requester,
+      type: ticket.type,
+      client: ticket.client || '',
+      entryDate: ticket.entryDate,
+      isSubstitute: ticket.isSubstitute,
+      previousTicketId: ticket.previousTicketId || ''
+  });
 
   const previousTicket = useMemo(() => {
       if (ticket.isSubstitute && ticket.previousTicketId) {
@@ -43,6 +61,19 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
     await onUpdateStatus(ticket.id, newStatus, note);
     setLoading(false);
     setNote('');
+  };
+
+  const handleSaveEdit = async () => {
+      setLoading(true);
+      await onEditTicket(ticket.id, {
+          ...editForm,
+          // Se for Desligue Cobre, limpa o cliente
+          client: editForm.type === TicketType.DESLIGUE_COBRE ? undefined : editForm.client,
+          // Se não for substituto, limpa o ID anterior
+          previousTicketId: editForm.isSubstitute ? editForm.previousTicketId : undefined
+      });
+      setIsEditing(false);
+      setLoading(false);
   };
 
   const handleValueBlur = async () => {
@@ -93,138 +124,267 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
             </h2>
             <p className="text-sm text-slate-500 font-mono">ID: {ticket.id}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-200">
-            <X className="h-6 w-6" />
-          </button>
+          <div className="flex items-center space-x-2">
+            {!isEditing && (
+                <button 
+                    onClick={() => setIsEditing(true)} 
+                    className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+                >
+                    <Pencil className="h-3 w-3" />
+                    <span>Editar Dados</span>
+                </button>
+            )}
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-200">
+                <X className="h-6 w-6" />
+            </button>
+          </div>
         </div>
 
         <div className="p-4 md:p-6 flex-1 overflow-y-auto">
-          {/* Ticket Info Card */}
-          <div className="bg-slate-50 p-4 rounded-lg mb-6 border border-slate-200 shadow-sm">
-             <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 md:col-span-1">
-                    <span className="text-xs text-slate-500 uppercase font-semibold">Local</span>
-                    <p className="text-sm font-medium text-slate-900">{ticket.ardName}</p>
-                    <p className="text-xs text-slate-600">{ticket.city} - {ticket.uf}</p>
-                    {ticket.coordinates && (
-                         <a 
-                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ticket.coordinates)}`} 
-                            target="_blank" 
-                            rel="noreferrer"
-                            className="text-xs text-blue-600 hover:underline mt-1 flex items-center"
-                         >
-                             <MapPin className="h-3 w-3 mr-1"/> {ticket.coordinates}
-                         </a>
-                    )}
-                </div>
-                <div>
-                    <span className="text-xs text-slate-500 uppercase font-semibold">Tipo / Cliente</span>
-                    <p className="text-sm font-medium text-slate-900">{ticket.type}</p>
-                    {ticket.client && <p className="text-xs text-slate-500">{ticket.client}</p>}
-                </div>
-                
-                {/* Visualização do Anexo com Thumbnail */}
-                <div className="col-span-2 md:col-span-1">
-                    <span className="text-xs text-slate-500 uppercase font-semibold block mb-2">Evidência (E-mail)</span>
-                    
-                    <div className="flex flex-col items-start space-y-2">
-                        {ticket.attachmentUrl ? (
-                            <div 
-                                className="group relative w-32 h-32 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-all"
-                                onClick={() => setShowImageModal(true)}
-                                title={ticket.attachmentName}
-                            >
-                                {isImageFile(ticket.attachmentName) ? (
-                                    <img 
-                                        src={ticket.attachmentUrl} 
-                                        alt="Thumbnail" 
-                                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 text-slate-500">
-                                        <FileText className="h-8 w-8 mb-1" />
-                                        <span className="text-[10px] uppercase font-bold text-slate-400 px-2 truncate w-full text-center">
-                                            {ticket.attachmentName?.split('.').pop() || 'FILE'}
-                                        </span>
-                                    </div>
-                                )}
-                                
-                                {/* Overlay hover */}
-                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <ZoomIn className="text-white h-6 w-6 drop-shadow-md" />
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="w-32 h-32 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
-                                <ImageIcon className="h-6 w-6 mb-1 opacity-50" />
-                                <span className="text-[10px] italic">Sem anexo</span>
-                            </div>
-                        )}
-
-                        <button 
-                            className="text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded flex items-center transition-colors"
-                            onClick={() => setIsReplacingAttachment(!isReplacingAttachment)}
-                        >
-                            <RefreshCw className="h-3 w-3 mr-1" />
-                            {ticket.attachmentUrl ? 'Trocar Arquivo' : 'Adicionar Arquivo'}
-                        </button>
-                    </div>
-                </div>
-                
-                {/* Comparativo de Valor / Detalhe do Ticket Anterior */}
-                {ticket.isSubstitute && (
-                     <div className="col-span-2 border-t border-slate-200 pt-2 mt-2 bg-white p-3 rounded border border-yellow-100 shadow-sm">
-                        <span className="text-xs text-slate-500 uppercase font-semibold block mb-2 border-b border-slate-100 pb-1">Ticket Substituído (Anterior)</span>
-                        
-                        {previousTicket ? (
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-slate-500">ID:</span>
-                                    <span className="font-bold text-slate-900">{previousTicket.id}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-slate-500">Status Final:</span>
-                                    <span className={`px-2 py-0.5 rounded text-xs font-semibold 
-                                        ${previousTicket.currentStatus === TicketStatus.APROVADO ? 'bg-green-100 text-green-800' : 
-                                          previousTicket.currentStatus === TicketStatus.CANCELADO ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800'}`}>
-                                        {previousTicket.currentStatus}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-slate-500">Valor Anterior:</span>
-                                    <span className="font-mono text-slate-700">{formatCurrency(previousTicket.value)}</span>
-                                </div>
-                                
-                                {/* Barra de Diferença */}
-                                <div className={`flex justify-between items-center text-sm pt-2 border-t border-slate-100 ${valueDifference > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                    <span className="text-xs text-slate-500">Diferença (Atual - Anterior):</span>
-                                    <div className="flex items-center font-bold">
-                                        {valueDifference > 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
-                                        {formatCurrency(valueDifference)}
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="text-center py-2 text-slate-400 text-xs italic">
-                                <AlertCircle className="h-4 w-4 mx-auto mb-1 text-yellow-400" />
-                                ID Anterior ({ticket.previousTicketId}) não encontrado no banco.
-                            </div>
-                        )}
-                     </div>
-                )}
-             </div>
-
-             {/* Substituição de Anexo */}
-             {isReplacingAttachment && (
-                 <div className="mt-4 p-3 bg-white rounded border border-blue-100 animate-fade-in">
-                     <label className="block text-xs font-medium text-slate-700 mb-1">Novo Arquivo</label>
-                     <input type="file" className="block w-full text-xs text-slate-500 file:mr-2 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" onChange={e => setNewAttachment(e.target.files ? e.target.files[0] : null)} />
-                     <div className="mt-2 flex justify-end">
-                         <Button size="sm" onClick={handleAttachmentUpload} disabled={!newAttachment} isLoading={loading}>Confirmar Troca</Button>
+          
+          {/* Ticket Info Card OR Edit Form */}
+          {isEditing ? (
+             <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200 shadow-inner">
+                 <div className="flex justify-between items-center mb-4 pb-2 border-b border-blue-200">
+                     <h3 className="font-bold text-blue-800">Editando Dados</h3>
+                     <div className="flex space-x-2">
+                         <button onClick={() => setIsEditing(false)} className="text-xs text-slate-500 hover:text-slate-700 underline">Cancelar</button>
                      </div>
                  </div>
-             )}
-          </div>
+                 
+                 <div className="grid grid-cols-2 gap-3">
+                     <div className="col-span-2">
+                         <label className="block text-xs font-medium text-slate-700">Nome ARD / Local</label>
+                         <input 
+                            type="text" 
+                            className="w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500"
+                            value={editForm.ardName}
+                            onChange={e => setEditForm({...editForm, ardName: e.target.value})}
+                         />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-medium text-slate-700">Cidade</label>
+                         <input 
+                            type="text" 
+                            className="w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500"
+                            value={editForm.city}
+                            onChange={e => setEditForm({...editForm, city: e.target.value})}
+                         />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-medium text-slate-700">UF</label>
+                         <select 
+                            className="w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500"
+                            value={editForm.uf}
+                            onChange={e => setEditForm({...editForm, uf: e.target.value})}
+                         >
+                            {STATES_BR.map(s => <option key={s} value={s}>{s}</option>)}
+                         </select>
+                     </div>
+                     <div className="col-span-2">
+                         <label className="block text-xs font-medium text-slate-700">Coordenadas</label>
+                         <input 
+                            type="text" 
+                            className="w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500 font-mono"
+                            value={editForm.coordinates}
+                            onChange={e => setEditForm({...editForm, coordinates: e.target.value})}
+                         />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-medium text-slate-700">Tipo</label>
+                         <select 
+                            className="w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500"
+                            value={editForm.type}
+                            onChange={e => setEditForm({...editForm, type: e.target.value as TicketType})}
+                         >
+                            {Object.values(TicketType).map(t => <option key={t} value={t}>{t}</option>)}
+                         </select>
+                     </div>
+                     <div>
+                         <label className="block text-xs font-medium text-slate-700">Cliente (Se B2B)</label>
+                         <input 
+                            type="text" 
+                            disabled={editForm.type !== TicketType.B2B}
+                            className={`w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500 ${editForm.type !== TicketType.B2B ? 'bg-slate-200' : ''}`}
+                            value={editForm.client}
+                            onChange={e => setEditForm({...editForm, client: e.target.value})}
+                         />
+                     </div>
+                     <div className="col-span-2">
+                         <label className="block text-xs font-medium text-slate-700">Solicitante</label>
+                         <input 
+                            type="text" 
+                            className="w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500"
+                            value={editForm.requester}
+                            onChange={e => setEditForm({...editForm, requester: e.target.value})}
+                         />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-medium text-slate-700">Data Entrada</label>
+                         <input 
+                            type="date" 
+                            className="w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500"
+                            value={editForm.entryDate}
+                            onChange={e => setEditForm({...editForm, entryDate: e.target.value})}
+                         />
+                     </div>
+                     
+                     <div className="col-span-2 mt-2 pt-2 border-t border-blue-200">
+                         <label className="flex items-center space-x-2 text-xs font-medium text-slate-700 mb-2">
+                             <input 
+                                type="checkbox" 
+                                checked={editForm.isSubstitute}
+                                onChange={e => setEditForm({...editForm, isSubstitute: e.target.checked})}
+                                className="rounded text-blue-600 focus:ring-blue-500"
+                             />
+                             <span>É Substituto?</span>
+                         </label>
+                         {editForm.isSubstitute && (
+                             <input 
+                                type="text"
+                                placeholder="ID do Ticket Anterior"
+                                className="w-full text-xs border-slate-300 rounded p-1.5 focus:ring-blue-500"
+                                value={editForm.previousTicketId}
+                                onChange={e => setEditForm({...editForm, previousTicketId: e.target.value})}
+                             />
+                         )}
+                     </div>
+
+                     <div className="col-span-2 mt-2 flex justify-end space-x-2">
+                         <Button size="sm" variant="outline" onClick={() => setIsEditing(false)}>Cancelar</Button>
+                         <Button size="sm" onClick={handleSaveEdit} isLoading={loading}>Salvar Alterações</Button>
+                     </div>
+                 </div>
+             </div>
+          ) : (
+            <div className="bg-slate-50 p-4 rounded-lg mb-6 border border-slate-200 shadow-sm animate-fade-in">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2 md:col-span-1">
+                        <span className="text-xs text-slate-500 uppercase font-semibold">Local</span>
+                        <p className="text-sm font-medium text-slate-900">{ticket.ardName}</p>
+                        <p className="text-xs text-slate-600">{ticket.city} - {ticket.uf}</p>
+                        {ticket.coordinates && (
+                            <a 
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ticket.coordinates)}`} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="text-xs text-blue-600 hover:underline mt-1 flex items-center"
+                            >
+                                <MapPin className="h-3 w-3 mr-1"/> {ticket.coordinates}
+                            </a>
+                        )}
+                    </div>
+                    <div>
+                        <span className="text-xs text-slate-500 uppercase font-semibold">Tipo / Cliente</span>
+                        <p className="text-sm font-medium text-slate-900">{ticket.type}</p>
+                        {ticket.client && <p className="text-xs text-slate-500">{ticket.client}</p>}
+                        <span className="text-xs text-slate-500 uppercase font-semibold block mt-2">Solicitante</span>
+                        <p className="text-xs text-slate-900">{ticket.requester}</p>
+                    </div>
+                    
+                    {/* Visualização do Anexo com Thumbnail */}
+                    <div className="col-span-2 md:col-span-1">
+                        <span className="text-xs text-slate-500 uppercase font-semibold block mb-2">Evidência (E-mail)</span>
+                        
+                        <div className="flex flex-col items-start space-y-2">
+                            {ticket.attachmentUrl ? (
+                                <div 
+                                    className="group relative w-32 h-32 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-all"
+                                    onClick={() => setShowImageModal(true)}
+                                    title={ticket.attachmentName}
+                                >
+                                    {isImageFile(ticket.attachmentName) ? (
+                                        <img 
+                                            src={ticket.attachmentUrl} 
+                                            alt="Thumbnail" 
+                                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 text-slate-500">
+                                            <FileText className="h-8 w-8 mb-1" />
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 px-2 truncate w-full text-center">
+                                                {ticket.attachmentName?.split('.').pop() || 'FILE'}
+                                            </span>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Overlay hover */}
+                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <ZoomIn className="text-white h-6 w-6 drop-shadow-md" />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="w-32 h-32 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
+                                    <ImageIcon className="h-6 w-6 mb-1 opacity-50" />
+                                    <span className="text-[10px] italic">Sem anexo</span>
+                                </div>
+                            )}
+
+                            <button 
+                                className="text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded flex items-center transition-colors"
+                                onClick={() => setIsReplacingAttachment(!isReplacingAttachment)}
+                            >
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                                {ticket.attachmentUrl ? 'Trocar Arquivo' : 'Adicionar Arquivo'}
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* Comparativo de Valor / Detalhe do Ticket Anterior */}
+                    {ticket.isSubstitute && (
+                        <div className="col-span-2 border-t border-slate-200 pt-2 mt-2 bg-white p-3 rounded border border-yellow-100 shadow-sm">
+                            <span className="text-xs text-slate-500 uppercase font-semibold block mb-2 border-b border-slate-100 pb-1">Ticket Substituído (Anterior)</span>
+                            
+                            {previousTicket ? (
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-slate-500">ID:</span>
+                                        <span className="font-bold text-slate-900">{previousTicket.id}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-slate-500">Status Final:</span>
+                                        <span className={`px-2 py-0.5 rounded text-xs font-semibold 
+                                            ${previousTicket.currentStatus === TicketStatus.APROVADO ? 'bg-green-100 text-green-800' : 
+                                            previousTicket.currentStatus === TicketStatus.CANCELADO ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800'}`}>
+                                            {previousTicket.currentStatus}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-slate-500">Valor Anterior:</span>
+                                        <span className="font-mono text-slate-700">{formatCurrency(previousTicket.value)}</span>
+                                    </div>
+                                    
+                                    {/* Barra de Diferença */}
+                                    <div className={`flex justify-between items-center text-sm pt-2 border-t border-slate-100 ${valueDifference > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                        <span className="text-xs text-slate-500">Diferença (Atual - Anterior):</span>
+                                        <div className="flex items-center font-bold">
+                                            {valueDifference > 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
+                                            {formatCurrency(valueDifference)}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center py-2 text-slate-400 text-xs italic">
+                                    <AlertCircle className="h-4 w-4 mx-auto mb-1 text-yellow-400" />
+                                    ID Anterior ({ticket.previousTicketId}) não encontrado no banco.
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Substituição de Anexo */}
+                {isReplacingAttachment && (
+                    <div className="mt-4 p-3 bg-white rounded border border-blue-100 animate-fade-in">
+                        <label className="block text-xs font-medium text-slate-700 mb-1">Novo Arquivo</label>
+                        <input type="file" className="block w-full text-xs text-slate-500 file:mr-2 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" onChange={e => setNewAttachment(e.target.files ? e.target.files[0] : null)} />
+                        <div className="mt-2 flex justify-end">
+                            <Button size="sm" onClick={handleAttachmentUpload} disabled={!newAttachment} isLoading={loading}>Confirmar Troca</Button>
+                        </div>
+                    </div>
+                )}
+            </div>
+          )}
 
           {/* Timeline */}
           <h3 className="text-lg font-medium text-slate-900 mb-4 flex items-center">

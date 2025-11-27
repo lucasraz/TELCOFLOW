@@ -165,17 +165,25 @@ const App: React.FC = () => {
 
   const handleDeleteTicket = async (ticketId: string) => {
     try {
-        // Agora confiamos que o ON DELETE CASCADE está configurado corretamente no banco.
-        // Isso apagará o ticket e automaticamente o histórico associado.
+        setLoading(true);
+        
+        // 1. Tenta deletar o histórico explicitamente primeiro.
+        // Isso previne erros de FK caso o CASCADE do banco não esteja funcionado.
+        const { error: historyError } = await supabase.from('ticket_history').delete().eq('ticket_id', ticketId);
+        
+        if (historyError) {
+            console.warn("Aviso ao deletar histórico (pode ser permissão ou já deletado):", historyError);
+            // Prosseguimos para tentar deletar o ticket mesmo assim
+        }
+
+        // 2. Deleta o Ticket
         const { error: ticketError } = await supabase.from('tickets').delete().eq('id', ticketId);
 
         if (ticketError) {
-            console.error("Erro delete ticket:", ticketError);
-            alert(`Erro ao deletar o ticket: ${ticketError.message}`);
-            return;
+            throw ticketError;
         }
 
-        // Atualiza o estado local removendo o item
+        // 3. Atualiza UI
         setTickets(prev => prev.filter(t => t.id !== ticketId));
         
         // Se o ticket deletado estiver aberto no modal, fecha ele
@@ -183,8 +191,10 @@ const App: React.FC = () => {
             setSelectedTicket(null);
         }
     } catch (err: any) {
-         console.error("Erro inesperado:", err);
-         alert("Ocorreu um erro inesperado ao tentar deletar.");
+         console.error("Erro ao deletar:", err);
+         alert(`Erro ao deletar: ${err.message || 'Erro desconhecido. Verifique permissões.'}`);
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -251,6 +261,45 @@ const App: React.FC = () => {
             };
             setSelectedTicket(updatedTicket);
     }
+  };
+
+  const handleEditTicketDetails = async (ticketId: string, updatedData: Partial<Ticket>) => {
+      if (!user) return;
+      setLoading(true);
+      
+      const { error } = await supabase.from('tickets').update({
+          ard_name: updatedData.ardName,
+          city: updatedData.city,
+          uf: updatedData.uf,
+          coordinates: updatedData.coordinates,
+          requester: updatedData.requester,
+          type: updatedData.type,
+          client: updatedData.client,
+          entry_date: updatedData.entryDate,
+          is_substitute: updatedData.isSubstitute,
+          previous_ticket_id: updatedData.previousTicketId
+      }).eq('id', ticketId);
+
+      if (error) {
+          setLoading(false);
+          alert("Erro ao editar dados: " + error.message);
+          return;
+      }
+
+      await supabase.from('ticket_history').insert({
+          ticket_id: ticketId,
+          status: selectedTicket?.currentStatus || TicketStatus.RECEBIDO,
+          note: "Dados cadastrais atualizados (Correção)",
+          updated_by: user.name
+      });
+
+      await fetchTickets();
+      
+      // Update local selection to reflect changes immediately
+      if (selectedTicket && selectedTicket.id === ticketId) {
+          setSelectedTicket(prev => prev ? ({ ...prev, ...updatedData }) : null);
+      }
+      setLoading(false);
   };
 
   const handleUpdateValue = async (ticketId: string, newValue: number) => {
@@ -432,6 +481,7 @@ const App: React.FC = () => {
             onUpdateAttachment={handleUpdateAttachment}
             onUpdateValue={handleUpdateValue}
             onDelete={handleDeleteTicket}
+            onEditTicket={handleEditTicketDetails}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Ticket, TicketStatus, TicketType } from '../types';
 import { Button } from './Button';
-import { Download, Filter, Eye, Search, Trash2, AlertTriangle, Upload, FileSpreadsheet, MapPin, Calendar, User, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Download, Filter, Eye, Search, Trash2, AlertTriangle, Upload, FileSpreadsheet, MapPin, User, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface TicketListProps {
   tickets: Ticket[];
@@ -46,7 +46,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
         
         // Search in substitute ID only if enabled
         if (searchSubstitute) {
-             // Se o toggle estiver ativo, verificamos também o campo previousTicketId
+             // Se o toggle estiver ativo, verificamos se o termo digitado bate com o ID Anterior (previousTicketId)
              if (ticket.previousTicketId && ticket.previousTicketId.toLowerCase().includes(term)) {
                  matchesSearch = true;
              }
@@ -337,7 +337,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
         </div>
       </div>
 
-      {/* MOBILE: Card View (Visible on small screens) */}
+      {/* MOBILE: Card View */}
       <div className="block md:hidden bg-slate-50 p-2 space-y-3 flex-1 overflow-y-auto">
           {filteredTickets.map(ticket => {
               const slaBreached = isSlaBreached(ticket);
@@ -359,9 +359,6 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                               <MapPin className="h-3 w-3 mr-1 text-slate-400" /> {ticket.ardName}
                           </div>
                           <div className="text-xs text-slate-500 pl-4">{ticket.city} - {ticket.uf}</div>
-                          <div className="flex items-center text-xs text-slate-600 pl-4 mt-1">
-                              <User className="h-3 w-3 mr-1" /> {ticket.requester}
-                          </div>
                       </div>
 
                       <div className="flex justify-between items-center border-t border-slate-100 pt-2">
@@ -369,7 +366,11 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ticket.value)}
                           </div>
                           <div className="flex space-x-2">
-                              {slaBreached && <AlertTriangle className="h-5 w-5 text-red-500 animate-pulse" title="SLA Estourado" />}
+                              {slaBreached && (
+                                <span title="SLA Estourado" className="flex items-center">
+                                    <AlertTriangle className="h-5 w-5 text-red-500 animate-pulse" />
+                                </span>
+                              )}
                               <button onClick={() => onViewDetail(ticket)} className="p-2 text-blue-600 bg-blue-50 rounded-full">
                                   <Eye className="h-4 w-4" />
                               </button>
@@ -378,10 +379,10 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                   </div>
               );
           })}
-          {filteredTickets.length === 0 && <div className="text-center py-8 text-slate-500">Nenhum registro encontrado com os filtros atuais.</div>}
+          {filteredTickets.length === 0 && <div className="text-center py-8 text-slate-500">Nenhum registro encontrado.</div>}
       </div>
 
-      {/* DESKTOP: Table View (Hidden on small screens) */}
+      {/* DESKTOP: Table View */}
       <div className="hidden md:block overflow-x-auto flex-1">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
