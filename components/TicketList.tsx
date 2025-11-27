@@ -38,18 +38,18 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
         const toDate = dateTo ? new Date(dateTo).getTime() : Infinity;
         const matchesDate = ticketDate >= fromDate && ticketDate <= toDate;
 
-        // Search: ID, ARD, Cidade
+        // Search Logic
         const term = searchTerm.toLowerCase();
-        let matchesSearch = ticket.ardName.toLowerCase().includes(term) || 
-                            ticket.city.toLowerCase().includes(term) ||
-                            ticket.id.toLowerCase().includes(term);
-        
-        // Search in substitute ID only if enabled
+        let matchesSearch = false;
+
         if (searchSubstitute) {
-             // Se o toggle estiver ativo, verificamos se o termo digitado bate com o ID Anterior (previousTicketId)
-             if (ticket.previousTicketId && ticket.previousTicketId.toLowerCase().includes(term)) {
-                 matchesSearch = true;
-             }
+             // Se o toggle estiver ativo, busca EXCLUSIVAMENTE no ID Anterior (previousTicketId)
+             matchesSearch = ticket.previousTicketId ? ticket.previousTicketId.toLowerCase().includes(term) : false;
+        } else {
+             // Busca Padrão: ID, ARD, Cidade
+             matchesSearch = ticket.ardName.toLowerCase().includes(term) || 
+                             ticket.city.toLowerCase().includes(term) ||
+                             ticket.id.toLowerCase().includes(term);
         }
 
         return matchesType && matchesStatus && matchesSearch && matchesDate;
@@ -322,165 +322,18 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
             <div className="flex flex-wrap gap-2 w-full xl:w-auto justify-center sm:justify-end">
                 <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileUpload} />
                 
-                <Button variant="outline" size="sm" onClick={handleDownloadTemplate} title="Baixar Modelo" className="flex-1 sm:flex-none">
-                    <FileSpreadsheet className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Modelo</span>
+                <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="flex-1 sm:flex-none">
+                     <span className="flex items-center" title="Baixar Modelo">
+                        <FileSpreadsheet className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Modelo</span>
+                     </span>
                 </Button>
 
-                <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} title="Importar" className="flex-1 sm:flex-none">
-                    <Upload className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Importar</span>
+                <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} className="flex-1 sm:flex-none">
+                    <span className="flex items-center" title="Importar">
+                        <Upload className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Importar</span>
+                    </span>
                 </Button>
 
-                <Button variant="primary" size="sm" onClick={handleExport} title="Exportar" className="flex-1 sm:flex-none">
-                    <Download className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Exportar</span>
-                </Button>
-            </div>
-        </div>
-      </div>
-
-      {/* MOBILE: Card View */}
-      <div className="block md:hidden bg-slate-50 p-2 space-y-3 flex-1 overflow-y-auto">
-          {filteredTickets.map(ticket => {
-              const slaBreached = isSlaBreached(ticket);
-              return (
-                  <div key={ticket.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                      <div className="flex justify-between items-start mb-2">
-                          <div>
-                              <div className="flex items-center space-x-2">
-                                  <span className="font-bold text-blue-600">{ticket.id}</span>
-                                  {ticket.isSubstitute && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1 rounded">SUB</span>}
-                              </div>
-                              <div className="text-xs text-slate-500">{new Date(ticket.entryDate).toLocaleDateString()}</div>
-                          </div>
-                          {getStatusBadge(ticket.currentStatus)}
-                      </div>
-                      
-                      <div className="space-y-1 mb-3">
-                          <div className="flex items-center text-sm text-slate-800 font-medium">
-                              <MapPin className="h-3 w-3 mr-1 text-slate-400" /> {ticket.ardName}
-                          </div>
-                          <div className="text-xs text-slate-500 pl-4">{ticket.city} - {ticket.uf}</div>
-                      </div>
-
-                      <div className="flex justify-between items-center border-t border-slate-100 pt-2">
-                          <div className="text-sm font-bold text-slate-900">
-                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ticket.value)}
-                          </div>
-                          <div className="flex space-x-2">
-                              {slaBreached && (
-                                <span title="SLA Estourado" className="flex items-center">
-                                    <AlertTriangle className="h-5 w-5 text-red-500 animate-pulse" />
-                                </span>
-                              )}
-                              <button onClick={() => onViewDetail(ticket)} className="p-2 text-blue-600 bg-blue-50 rounded-full">
-                                  <Eye className="h-4 w-4" />
-                              </button>
-                          </div>
-                      </div>
-                  </div>
-              );
-          })}
-          {filteredTickets.length === 0 && <div className="text-center py-8 text-slate-500">Nenhum registro encontrado.</div>}
-      </div>
-
-      {/* DESKTOP: Table View */}
-      <div className="hidden md:block overflow-x-auto flex-1">
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
-            <tr>
-              <th scope="col" onClick={() => requestSort('id')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
-                  <div className="flex items-center">ID / Data {getSortIcon('id')}</div>
-              </th>
-              <th scope="col" onClick={() => requestSort('ardName')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
-                  <div className="flex items-center">Local {getSortIcon('ardName')}</div>
-              </th>
-              <th scope="col" onClick={() => requestSort('requester')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
-                  <div className="flex items-center">Info (Solicitante) {getSortIcon('requester')}</div>
-              </th>
-              <th scope="col" onClick={() => requestSort('value')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
-                  <div className="flex items-center">Tipo / Valor {getSortIcon('value')}</div>
-              </th>
-              <th scope="col" onClick={() => requestSort('currentStatus')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
-                  <div className="flex items-center">Status {getSortIcon('currentStatus')}</div>
-              </th>
-              <th scope="col" className="relative px-6 py-3"><span className="sr-only">Ações</span></th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-slate-200">
-            {filteredTickets.map((ticket) => {
-                const slaBreached = isSlaBreached(ticket);
-                return (
-              <tr key={ticket.id} className="hover:bg-slate-50 transition-colors group">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center space-x-2">
-                      <div className="text-sm font-bold text-blue-600 group-hover:text-blue-700 transition-colors">{ticket.id}</div>
-                      {ticket.isSubstitute && <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] rounded border border-yellow-200">SUB</span>}
-                  </div>
-                  {ticket.isSubstitute && ticket.previousTicketId && (
-                      <div className="text-[10px] text-slate-400 font-medium">Ref: {ticket.previousTicketId}</div>
-                  )}
-                  <div className="text-xs text-slate-500 mt-1">{new Date(ticket.entryDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
-                  {slaBreached && (
-                      <div className="flex items-center text-red-500 text-xs mt-1 font-semibold animate-pulse">
-                          <span title="SLA Estourado" className="flex items-center">
-                            <AlertTriangle className="h-3 w-3 mr-1" />
-                          </span>
-                          SLA {'>'} 48h
-                      </div>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-slate-900 font-medium">{ticket.ardName}</div>
-                  <div className="text-xs text-slate-500">{ticket.city} - {ticket.uf}</div>
-                  {ticket.coordinates && <div className="text-[10px] text-slate-400 font-mono mt-0.5">{ticket.coordinates}</div>}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                  <div className="font-medium text-slate-700">{ticket.requester}</div>
-                  {ticket.client && <div className="text-xs text-slate-400">{ticket.client}</div>}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${ticket.type === TicketType.B2B ? 'bg-purple-100 text-purple-800' : 'bg-orange-100 text-orange-800'}`}>
-                    {ticket.type}
-                  </span>
-                  <div className="text-sm text-slate-900 mt-1 font-mono">
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ticket.value)}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap relative">
-                   <div className="flex items-center">
-                       {/* LED indicator */}
-                       {(ticket.currentStatus === TicketStatus.APROVADO || ticket.currentStatus === TicketStatus.CANCELADO) && (
-                           <span className="relative flex h-3 w-3 mr-2">
-                             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${ticket.currentStatus === TicketStatus.APROVADO ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                             <span className={`relative inline-flex rounded-full h-3 w-3 ${ticket.currentStatus === TicketStatus.APROVADO ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                           </span>
-                       )}
-                       {getStatusBadge(ticket.currentStatus)}
-                   </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end space-x-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => onViewDetail(ticket)} className="text-blue-600 hover:text-blue-900 flex items-center p-1 rounded hover:bg-blue-50" title="Ver Detalhes">
-                        <Eye className="h-4 w-4" />
-                    </button>
-                    <button onClick={() => {
-                        if(window.confirm(`Tem certeza que deseja deletar o ticket ${ticket.id}? Essa ação não pode ser desfeita.`)) {
-                            onDelete(ticket.id);
-                        }
-                    }} className="text-red-400 hover:text-red-700 flex items-center p-1 rounded hover:bg-red-50" title="Deletar">
-                        <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            )})}
-            {filteredTickets.length === 0 && (
-                <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-slate-500">Nenhum registro encontrado.</td>
-                </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
+                <Button variant="primary" size="sm" onClick={handleExport} className="flex-1 sm:flex-none">
+                     <span className="flex items-center" title="Exportar">
+                        <Download className="h-4 w-4 mr
