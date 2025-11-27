@@ -166,17 +166,7 @@ const App: React.FC = () => {
   const handleDeleteTicket = async (ticketId: string) => {
     try {
         setLoading(true);
-        
-        // 1. Tenta deletar o histórico explicitamente primeiro.
-        // Isso previne erros de FK caso o CASCADE do banco não esteja funcionado.
-        const { error: historyError } = await supabase.from('ticket_history').delete().eq('ticket_id', ticketId);
-        
-        if (historyError) {
-            console.warn("Aviso ao deletar histórico (pode ser permissão ou já deletado):", historyError);
-            // Prosseguimos para tentar deletar o ticket mesmo assim
-        }
-
-        // 2. Deleta o Ticket
+        // Com ON DELETE CASCADE configurado no Supabase, apenas deletamos o ticket pai.
         const { error: ticketError } = await supabase.from('tickets').delete().eq('id', ticketId);
 
         if (ticketError) {

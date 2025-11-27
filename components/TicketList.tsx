@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Ticket, TicketStatus, TicketType } from '../types';
 import { Button } from './Button';
-import { Download, Filter, Eye, Search, Trash2, AlertTriangle, Upload, FileSpreadsheet, MapPin, User, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Download, Search, Trash2, AlertTriangle, Upload, FileSpreadsheet, MapPin, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface TicketListProps {
   tickets: Ticket[];
@@ -421,7 +421,10 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                   <div className="text-xs text-slate-500 mt-1">{new Date(ticket.entryDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
                   {slaBreached && (
                       <div className="flex items-center text-red-500 text-xs mt-1 font-semibold animate-pulse">
-                          <AlertTriangle className="h-3 w-3 mr-1" /> SLA {'>'} 48h
+                          <span title="SLA Estourado" className="flex items-center">
+                            <AlertTriangle className="h-3 w-3 mr-1" />
+                          </span>
+                          SLA {'>'} 48h
                       </div>
                   )}
                 </td>
