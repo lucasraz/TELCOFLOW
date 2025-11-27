@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Ticket, TicketStatus, TicketType } from '../types';
 import { Button } from './Button';
-import { Download, Filter, Eye, Search, Trash2, AlertTriangle, Upload, FileSpreadsheet, MapPin, Calendar, User } from 'lucide-react';
+import { Download, Filter, Eye, Search, Trash2, AlertTriangle, Upload, FileSpreadsheet, MapPin, Calendar, User, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface TicketListProps {
   tickets: Ticket[];
@@ -10,25 +10,98 @@ interface TicketListProps {
   onImport?: (tickets: Ticket[]) => void;
 }
 
+type SortKey = 'id' | 'ardName' | 'value' | 'entryDate' | 'currentStatus';
+
 export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, onDelete, onImport }) => {
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchSubstitute, setSearchSubstitute] = useState(false);
+  
+  // Date Filters
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // Sorting State
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredTickets = tickets.filter(ticket => {
-    const matchesType = filterType === 'all' || ticket.type === filterType;
-    const matchesStatus = filterStatus === 'all' || ticket.currentStatus === filterStatus;
-    
-    // Busca: ID, ARD, Cidade OU ID Anterior (Substituto)
-    const term = searchTerm.toLowerCase();
-    const matchesSearch = ticket.ardName.toLowerCase().includes(term) || 
-                          ticket.city.toLowerCase().includes(term) ||
-                          ticket.id.toLowerCase().includes(term) ||
-                          (ticket.previousTicketId && ticket.previousTicketId.toLowerCase().includes(term));
+  const filteredTickets = useMemo(() => {
+      let filtered = tickets.filter(ticket => {
+        const matchesType = filterType === 'all' || ticket.type === filterType;
+        const matchesStatus = filterStatus === 'all' || ticket.currentStatus === filterStatus;
+        
+        // Date Range
+        const ticketDate = new Date(ticket.entryDate).getTime();
+        const fromDate = dateFrom ? new Date(dateFrom).getTime() : 0;
+        const toDate = dateTo ? new Date(dateTo).getTime() : Infinity;
+        const matchesDate = ticketDate >= fromDate && ticketDate <= toDate;
 
-    return matchesType && matchesStatus && matchesSearch;
-  });
+        // Search: ID, ARD, Cidade OU ID Substituto
+        const term = searchTerm.toLowerCase();
+        let matchesSearch = ticket.ardName.toLowerCase().includes(term) || 
+                            ticket.city.toLowerCase().includes(term) ||
+                            ticket.id.toLowerCase().includes(term);
+        
+        // Search in substitute ID only if enabled
+        if (searchSubstitute) {
+             // Se o toggle estiver ativo, damos prioridade para encontrar quem tem esse ID como anterior
+             if (ticket.previousTicketId && ticket.previousTicketId.toLowerCase().includes(term)) {
+                 matchesSearch = true;
+             }
+        }
+
+        return matchesType && matchesStatus && matchesSearch && matchesDate;
+      });
+
+      // Sorting
+      if (sortConfig) {
+          filtered.sort((a, b) => {
+              let aValue: any = a[sortConfig.key];
+              let bValue: any = b[sortConfig.key];
+
+              // Handle specific types
+              if (sortConfig.key === 'value') {
+                   // numeric is straightforward
+              } else if (sortConfig.key === 'entryDate') {
+                  aValue = new Date(aValue).getTime();
+                  bValue = new Date(bValue).getTime();
+              } else {
+                  // string comparison
+                  aValue = String(aValue).toLowerCase();
+                  bValue = String(bValue).toLowerCase();
+              }
+
+              if (aValue < bValue) {
+                  return sortConfig.direction === 'asc' ? -1 : 1;
+              }
+              if (aValue > bValue) {
+                  return sortConfig.direction === 'asc' ? 1 : -1;
+              }
+              return 0;
+          });
+      }
+
+      return filtered;
+  }, [tickets, filterType, filterStatus, searchTerm, searchSubstitute, dateFrom, dateTo, sortConfig]);
+
+  const requestSort = (key: SortKey) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (key: SortKey) => {
+      if (!sortConfig || sortConfig.key !== key) {
+          return <ArrowUpDown className="h-3 w-3 ml-1 text-slate-400" />;
+      }
+      return sortConfig.direction === 'asc' ? 
+          <ArrowUp className="h-3 w-3 ml-1 text-blue-600" /> : 
+          <ArrowDown className="h-3 w-3 ml-1 text-blue-600" />;
+  };
 
   const handleExport = () => {
     const headers = ["ID", "ID Anterior", "ARD", "Coordenadas", "UF", "Cidade", "Solicitante", "Tipo", "Cliente", "Valor", "Status", "Data Entrada", "Data Criação"];
@@ -174,43 +247,77 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
   return (
     <div className="bg-white shadow rounded-lg overflow-hidden flex flex-col h-full">
       {/* Filters Header */}
-      <div className="p-4 border-b border-slate-200 flex flex-col xl:flex-row gap-4">
-        <div className="flex-1 relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-slate-400" />
+      <div className="p-4 border-b border-slate-200 flex flex-col gap-4">
+        
+        {/* Top Filter Row: Search & Toggles */}
+        <div className="flex flex-col md:flex-row gap-4 items-center">
+            <div className="flex-1 relative w-full">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-5 w-5 text-slate-400" />
+                </div>
+                <input 
+                    type="text"
+                    placeholder="Buscar por ID, ARD ou Cidade..."
+                    className="pl-10 block w-full rounded-md border-slate-300 border p-2 shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                />
             </div>
-            <input 
-                type="text"
-                placeholder="Buscar por ID, ARD ou Cidade..."
-                className="pl-10 block w-full rounded-md border-slate-300 border p-2 shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-            />
+            
+            <label className="flex items-center space-x-2 cursor-pointer bg-slate-50 px-3 py-2 rounded border border-slate-200 w-full md:w-auto hover:bg-slate-100 transition-colors">
+                <input 
+                    type="checkbox" 
+                    checked={searchSubstitute} 
+                    onChange={e => setSearchSubstitute(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-slate-700 select-none">Buscar IDs Substitutos</span>
+            </label>
         </div>
         
-        <div className="flex flex-col sm:flex-row items-center gap-2">
-            <select 
-                className="w-full sm:w-auto rounded-md border-slate-300 border p-2 text-sm"
-                value={filterType}
-                onChange={e => setFilterType(e.target.value)}
-            >
-                <option value="all">Todos Tipos</option>
-                {Object.values(TicketType).map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            
-            <select 
-                className="w-full sm:w-auto rounded-md border-slate-300 border p-2 text-sm"
-                value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value)}
-            >
-                <option value="all">Todos Status</option>
-                {Object.values(TicketStatus).map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+        {/* Bottom Filter Row: Dropdowns & Actions */}
+        <div className="flex flex-col xl:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full xl:w-auto">
+                <div className="flex items-center space-x-1 w-full sm:w-auto">
+                    <span className="text-xs text-slate-500 whitespace-nowrap">De:</span>
+                    <input 
+                        type="date" 
+                        className="rounded-md border-slate-300 border p-2 text-sm w-full" 
+                        value={dateFrom} 
+                        onChange={e => setDateFrom(e.target.value)} 
+                    />
+                </div>
+                <div className="flex items-center space-x-1 w-full sm:w-auto">
+                     <span className="text-xs text-slate-500 whitespace-nowrap">Até:</span>
+                     <input 
+                        type="date" 
+                        className="rounded-md border-slate-300 border p-2 text-sm w-full" 
+                        value={dateTo} 
+                        onChange={e => setDateTo(e.target.value)} 
+                     />
+                </div>
 
-            <div className="hidden xl:block h-6 w-px bg-slate-300 mx-1"></div>
+                <select 
+                    className="w-full sm:w-auto rounded-md border-slate-300 border p-2 text-sm"
+                    value={filterType}
+                    onChange={e => setFilterType(e.target.value)}
+                >
+                    <option value="all">Todos Tipos</option>
+                    {Object.values(TicketType).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                
+                <select 
+                    className="w-full sm:w-auto rounded-md border-slate-300 border p-2 text-sm"
+                    value={filterStatus}
+                    onChange={e => setFilterStatus(e.target.value)}
+                >
+                    <option value="all">Todos Status</option>
+                    {Object.values(TicketStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+            </div>
 
-            {/* Actions Toolbar - Wrap on mobile */}
-            <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-center sm:justify-end">
+            {/* Actions Toolbar */}
+            <div className="flex flex-wrap gap-2 w-full xl:w-auto justify-center sm:justify-end">
                 <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileUpload} />
                 
                 <Button variant="outline" size="sm" onClick={handleDownloadTemplate} title="Baixar Modelo" className="flex-1 sm:flex-none">
@@ -229,7 +336,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
       </div>
 
       {/* MOBILE: Card View (Visible on small screens) */}
-      <div className="block md:hidden bg-slate-50 p-2 space-y-3">
+      <div className="block md:hidden bg-slate-50 p-2 space-y-3 flex-1 overflow-y-auto">
           {filteredTickets.map(ticket => {
               const slaBreached = isSlaBreached(ticket);
               return (
@@ -269,19 +376,29 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                   </div>
               );
           })}
-          {filteredTickets.length === 0 && <div className="text-center py-8 text-slate-500">Nenhum registro.</div>}
+          {filteredTickets.length === 0 && <div className="text-center py-8 text-slate-500">Nenhum registro encontrado com os filtros atuais.</div>}
       </div>
 
       {/* DESKTOP: Table View (Hidden on small screens) */}
-      <div className="hidden md:block overflow-x-auto">
+      <div className="hidden md:block overflow-x-auto flex-1">
         <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
+          <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
             <tr>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID / Data</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Local</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Info</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tipo / Valor</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+              <th scope="col" onClick={() => requestSort('id')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group">
+                  <div className="flex items-center">ID / Data {getSortIcon('id')}</div>
+              </th>
+              <th scope="col" onClick={() => requestSort('ardName')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group">
+                  <div className="flex items-center">Local {getSortIcon('ardName')}</div>
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Info
+              </th>
+              <th scope="col" onClick={() => requestSort('value')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group">
+                  <div className="flex items-center">Tipo / Valor {getSortIcon('value')}</div>
+              </th>
+              <th scope="col" onClick={() => requestSort('currentStatus')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group">
+                  <div className="flex items-center">Status {getSortIcon('currentStatus')}</div>
+              </th>
               <th scope="col" className="relative px-6 py-3"><span className="sr-only">Ações</span></th>
             </tr>
           </thead>
@@ -296,7 +413,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                       {ticket.isSubstitute && <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] rounded border border-yellow-200">SUB</span>}
                   </div>
                   {ticket.isSubstitute && ticket.previousTicketId && (
-                      <div className="text-[10px] text-slate-400">Ref: {ticket.previousTicketId}</div>
+                      <div className="text-[10px] text-slate-400 font-medium">Ref: {ticket.previousTicketId}</div>
                   )}
                   <div className="text-xs text-slate-500 mt-1">{new Date(ticket.entryDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
                   {slaBreached && (
@@ -340,7 +457,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                         <Eye className="h-4 w-4" />
                     </button>
                     <button onClick={() => {
-                        if(window.confirm(`Tem certeza que deseja deletar o ticket ${ticket.id}?`)) {
+                        if(window.confirm(`Tem certeza que deseja deletar o ticket ${ticket.id}? Essa ação não pode ser desfeita.`)) {
                             onDelete(ticket.id);
                         }
                     }} className="text-red-400 hover:text-red-700 flex items-center" title="Deletar">

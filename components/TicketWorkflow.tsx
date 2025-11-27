@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Ticket, TicketStatus, User } from '../types';
 import { Button } from './Button';
-import { X, Clock, CheckCircle, AlertCircle, Trash2, ZoomIn, RefreshCw, Download, MapPin, DollarSign, TrendingDown, TrendingUp, ArrowRight } from 'lucide-react';
-import { supabase } from '../supabaseClient';
+import { X, Clock, CheckCircle, AlertCircle, Trash2, ZoomIn, RefreshCw, Download, MapPin, DollarSign, TrendingDown, TrendingUp, ArrowRight, ExternalLink, FileText, Image as ImageIcon } from 'lucide-react';
 
 interface TicketWorkflowProps {
   ticket: Ticket;
@@ -40,12 +39,10 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
   }, [ticket.value, previousTicket]);
 
   const handleUpdate = async () => {
-    if (note.trim()) {
-      setLoading(true);
-      await onUpdateStatus(ticket.id, newStatus, note);
-      setLoading(false);
-      setNote('');
-    }
+    setLoading(true);
+    await onUpdateStatus(ticket.id, newStatus, note);
+    setLoading(false);
+    setNote('');
   };
 
   const handleValueBlur = async () => {
@@ -68,13 +65,17 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
   }
 
   const handleDelete = async () => {
-      if(window.confirm("Esta ação é irreversível. Deletar ticket?")) {
+      if(window.confirm("ATENÇÃO: Esta ação é irreversível e excluirá todo o histórico. Deseja continuar?")) {
           setLoading(true);
           await onDelete(ticket.id);
-          setLoading(false);
-          onClose();
+          // O componente será desmontado pelo pai ao atualizar a lista
       }
   }
+
+  const isImageFile = (filename?: string) => {
+      if (!filename) return false;
+      return /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(filename);
+  };
 
   const availableStatuses = Object.values(TicketStatus);
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -88,7 +89,7 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
           <div>
             <h2 className="text-lg md:text-xl font-bold text-slate-900 flex items-center flex-wrap gap-2">
                 Fluxo de Trabalho
-                {ticket.isSubstitute && <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full">Substituto</span>}
+                {ticket.isSubstitute && <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full border border-yellow-300">Substituto</span>}
             </h2>
             <p className="text-sm text-slate-500 font-mono">ID: {ticket.id}</p>
           </div>
@@ -106,9 +107,14 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
                     <p className="text-sm font-medium text-slate-900">{ticket.ardName}</p>
                     <p className="text-xs text-slate-600">{ticket.city} - {ticket.uf}</p>
                     {ticket.coordinates && (
-                        <p className="text-xs text-slate-400 font-mono mt-1 flex items-center">
-                            <MapPin className="h-3 w-3 mr-1"/> {ticket.coordinates}
-                        </p>
+                         <a 
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ticket.coordinates)}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="text-xs text-blue-600 hover:underline mt-1 flex items-center"
+                         >
+                             <MapPin className="h-3 w-3 mr-1"/> {ticket.coordinates}
+                         </a>
                     )}
                 </div>
                 <div>
@@ -116,52 +122,94 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
                     <p className="text-sm font-medium text-slate-900">{ticket.type}</p>
                     {ticket.client && <p className="text-xs text-slate-500">{ticket.client}</p>}
                 </div>
+                
+                {/* Visualização do Anexo com Thumbnail */}
                 <div className="col-span-2 md:col-span-1">
-                    <span className="text-xs text-slate-500 uppercase font-semibold">Anexo</span>
-                    <div className="flex items-center space-x-2 mt-1">
+                    <span className="text-xs text-slate-500 uppercase font-semibold block mb-2">Evidência (E-mail)</span>
+                    
+                    <div className="flex flex-col items-start space-y-2">
                         {ticket.attachmentUrl ? (
-                            <button 
-                                className="text-xs flex items-center text-blue-600 hover:text-blue-800 underline bg-blue-50 px-2 py-1 rounded"
+                            <div 
+                                className="group relative w-32 h-32 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-all"
                                 onClick={() => setShowImageModal(true)}
+                                title={ticket.attachmentName}
                             >
-                                <ZoomIn className="h-3 w-3 mr-1" />
-                                Visualizar
-                            </button>
+                                {isImageFile(ticket.attachmentName) ? (
+                                    <img 
+                                        src={ticket.attachmentUrl} 
+                                        alt="Thumbnail" 
+                                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                                    />
+                                ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 text-slate-500">
+                                        <FileText className="h-8 w-8 mb-1" />
+                                        <span className="text-[10px] uppercase font-bold text-slate-400 px-2 truncate w-full text-center">
+                                            {ticket.attachmentName?.split('.').pop() || 'FILE'}
+                                        </span>
+                                    </div>
+                                )}
+                                
+                                {/* Overlay hover */}
+                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <ZoomIn className="text-white h-6 w-6 drop-shadow-md" />
+                                </div>
+                            </div>
                         ) : (
-                            <span className="text-xs text-slate-400 italic">Sem anexo</span>
+                            <div className="w-32 h-32 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
+                                <ImageIcon className="h-6 w-6 mb-1 opacity-50" />
+                                <span className="text-[10px] italic">Sem anexo</span>
+                            </div>
                         )}
+
                         <button 
-                            className="text-xs text-slate-500 hover:text-slate-700 bg-slate-200 p-1 rounded"
+                            className="text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded flex items-center transition-colors"
                             onClick={() => setIsReplacingAttachment(!isReplacingAttachment)}
-                            title="Trocar Anexo"
                         >
-                            <RefreshCw className="h-3 w-3" />
+                            <RefreshCw className="h-3 w-3 mr-1" />
+                            {ticket.attachmentUrl ? 'Trocar Arquivo' : 'Adicionar Arquivo'}
                         </button>
                     </div>
                 </div>
                 
-                {/* Comparativo de Valor */}
-                {ticket.isSubstitute && previousTicket && (
-                     <div className="col-span-2 border-t border-slate-200 pt-2 mt-2 bg-white p-2 rounded border-dashed">
-                        <span className="text-xs text-slate-500 uppercase font-semibold block mb-1">Comparativo</span>
-                        <div className="flex items-center justify-between text-sm">
-                            <div className="text-slate-500">
-                                <span className="block text-xs">Anterior</span>
-                                {formatCurrency(previousTicket.value)}
-                            </div>
-                            <ArrowRight className="h-4 w-4 text-slate-300" />
-                            <div className="text-slate-900 font-bold">
-                                <span className="block text-xs font-normal text-slate-500">Atual</span>
-                                {formatCurrency(ticket.value)}
-                            </div>
-                            <div className={`text-right ${valueDifference > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                <span className="block text-xs text-slate-500">Dif.</span>
-                                <div className="flex items-center justify-end">
-                                    {valueDifference > 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
-                                    {formatCurrency(valueDifference)}
+                {/* Comparativo de Valor / Detalhe do Ticket Anterior */}
+                {ticket.isSubstitute && (
+                     <div className="col-span-2 border-t border-slate-200 pt-2 mt-2 bg-white p-3 rounded border border-yellow-100 shadow-sm">
+                        <span className="text-xs text-slate-500 uppercase font-semibold block mb-2 border-b border-slate-100 pb-1">Ticket Substituído (Anterior)</span>
+                        
+                        {previousTicket ? (
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-slate-500">ID:</span>
+                                    <span className="font-bold text-slate-900">{previousTicket.id}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-slate-500">Status Final:</span>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-semibold 
+                                        ${previousTicket.currentStatus === TicketStatus.APROVADO ? 'bg-green-100 text-green-800' : 
+                                          previousTicket.currentStatus === TicketStatus.CANCELADO ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800'}`}>
+                                        {previousTicket.currentStatus}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-slate-500">Valor Anterior:</span>
+                                    <span className="font-mono text-slate-700">{formatCurrency(previousTicket.value)}</span>
+                                </div>
+                                
+                                {/* Barra de Diferença */}
+                                <div className={`flex justify-between items-center text-sm pt-2 border-t border-slate-100 ${valueDifference > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                    <span className="text-xs text-slate-500">Diferença (Atual - Anterior):</span>
+                                    <div className="flex items-center font-bold">
+                                        {valueDifference > 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
+                                        {formatCurrency(valueDifference)}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="text-center py-2 text-slate-400 text-xs italic">
+                                <AlertCircle className="h-4 w-4 mx-auto mb-1 text-yellow-400" />
+                                ID Anterior ({ticket.previousTicketId}) não encontrado no banco.
+                            </div>
+                        )}
                      </div>
                 )}
              </div>
@@ -216,29 +264,6 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
               ))}
             </ul>
           </div>
-          
-          {/* Map Section */}
-          {ticket.coordinates && (
-              <div className="mt-6 border-t border-slate-200 pt-6">
-                 <h4 className="text-sm font-medium text-slate-900 mb-3 flex items-center">
-                     <MapPin className="h-4 w-4 mr-2 text-blue-500" />
-                     Localização (Zoom 18)
-                 </h4>
-                 <div className="rounded-lg overflow-hidden border border-slate-200 shadow-sm h-48 w-full bg-slate-100 relative">
-                    <iframe 
-                        width="100%" 
-                        height="100%" 
-                        frameBorder="0" 
-                        scrolling="no" 
-                        marginHeight={0} 
-                        marginWidth={0} 
-                        src={`https://maps.google.com/maps?q=${ticket.coordinates}&hl=pt-br&z=18&output=embed`}
-                        title="Localização do Ticket"
-                        className="absolute inset-0"
-                    ></iframe>
-                 </div>
-              </div>
-          )}
         </div>
 
         {/* Action Footer */}
@@ -286,7 +311,7 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
                 ></textarea>
             </div>
             <div className="flex gap-3">
-                <Button className="flex-1 py-3" onClick={handleUpdate} disabled={!note.trim()} isLoading={loading}>
+                <Button className="flex-1 py-3" onClick={handleUpdate} isLoading={loading}>
                     Salvar
                 </Button>
                 <Button variant="danger" className="w-14" onClick={handleDelete} title="Deletar" isLoading={loading}>

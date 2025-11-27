@@ -35,6 +35,7 @@ export type Ticket = {
   id: string; // ID Manual (TC-...)
   ardName: string;
   coordinates?: string;
+  clientCoordinates?: string;
   uf: string;
   city: string;
   requester: string;

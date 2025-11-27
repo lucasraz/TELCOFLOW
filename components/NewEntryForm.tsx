@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { Ticket, TicketStatus, TicketType, User } from '../types';
 import { STATES_BR } from '../constants';
 import { Button } from './Button';
-import { UploadCloud, Calendar, MapPin } from 'lucide-react';
+import { UploadCloud, Calendar, MapPin, ExternalLink } from 'lucide-react';
 
 interface NewEntryFormProps {
   user: User;
-  onSubmit: (ticket: Ticket) => void;
+  onSubmit: (ticket: Ticket, file: File | null) => void;
   onCancel: () => void;
 }
 
@@ -21,6 +21,7 @@ export const NewEntryForm: React.FC<NewEntryFormProps> = ({ user, onSubmit, onCa
   const [type, setType] = useState<TicketType>(TicketType.B2B);
   const [client, setClient] = useState('');
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Logic for substitution
   const [isSubstitute, setIsSubstitute] = useState(false);
@@ -28,6 +29,7 @@ export const NewEntryForm: React.FC<NewEntryFormProps> = ({ user, onSubmit, onCa
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     
     const newTicket: Ticket = {
       id: manualId,
@@ -43,7 +45,7 @@ export const NewEntryForm: React.FC<NewEntryFormProps> = ({ user, onSubmit, onCa
       createdAt: new Date().toISOString(), // Audit creation time
       entryDate: entryDate, // User defined date
       attachmentName: attachment?.name,
-      attachmentUrl: attachment ? URL.createObjectURL(attachment) : undefined, // Fake URL for demo
+      attachmentUrl: undefined, // URL será gerada no App.tsx após upload
       isSubstitute,
       previousTicketId: isSubstitute ? previousTicketId : undefined,
       history: [
@@ -56,7 +58,8 @@ export const NewEntryForm: React.FC<NewEntryFormProps> = ({ user, onSubmit, onCa
       ]
     };
 
-    onSubmit(newTicket);
+    // Passamos o arquivo separadamente para upload real
+    onSubmit(newTicket, attachment);
   };
 
   return (
@@ -76,7 +79,7 @@ export const NewEntryForm: React.FC<NewEntryFormProps> = ({ user, onSubmit, onCa
                 required
                 className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
                 value={manualId}
-                onChange={e => setManualId(e.target.value)}
+                onChange={e => setManualId(e.target.value.trim())}
                 placeholder="Ex: T-9999"
                 />
             </div>
@@ -219,6 +222,7 @@ export const NewEntryForm: React.FC<NewEntryFormProps> = ({ user, onSubmit, onCa
             </div>
         </div>
 
+        {/* Upload Simples */}
         <div>
           <label className="block text-sm font-medium text-slate-700">Evidência (Print do E-mail)</label>
           <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-md hover:bg-slate-50 transition-colors">
@@ -241,30 +245,24 @@ export const NewEntryForm: React.FC<NewEntryFormProps> = ({ user, onSubmit, onCa
           </div>
         </div>
 
-        {/* Map Preview */}
+        {/* Link direto para o Maps caso tenha coordenada preenchida */}
         {coordinates && (
-            <div className="rounded-lg overflow-hidden border border-slate-200">
-                <div className="bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200 flex items-center">
-                    <MapPin className="h-3 w-3 mr-1" /> Pré-visualização de Localização
-                </div>
-                <div className="h-64 w-full bg-slate-50">
-                    <iframe 
-                        width="100%" 
-                        height="100%" 
-                        frameBorder="0" 
-                        scrolling="no" 
-                        marginHeight={0} 
-                        marginWidth={0} 
-                        src={`https://maps.google.com/maps?q=${coordinates}&hl=pt-br&z=18&output=embed`}
-                        title="Map Preview"
-                    ></iframe>
-                </div>
+            <div className="flex items-center justify-end">
+                <a 
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coordinates)}`} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="flex items-center text-sm text-blue-600 hover:text-blue-800"
+                >
+                    <ExternalLink className="h-4 w-4 mr-1" />
+                    Testar coordenada no Google Maps
+                </a>
             </div>
         )}
 
         <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200">
-          <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
-          <Button type="submit">Registrar Entrada</Button>
+          <Button variant="outline" type="button" onClick={onCancel} disabled={isSubmitting}>Cancelar</Button>
+          <Button type="submit" isLoading={isSubmitting}>Registrar Entrada</Button>
         </div>
       </form>
     </div>

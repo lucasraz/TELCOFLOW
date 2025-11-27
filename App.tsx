@@ -42,7 +42,11 @@ const App: React.FC = () => {
 
   const fetchTickets = async () => {
       setLoading(true);
-      const { data: ticketsData, error } = await supabase.from('tickets').select('*');
+      const { data: ticketsData, error } = await supabase
+        .from('tickets')
+        .select('*')
+        .order('created_at', { ascending: false }); // Ordenar por mais recente
+
       if (error) {
           console.error('Error fetching tickets:', error);
           setLoading(false);
@@ -56,6 +60,7 @@ const App: React.FC = () => {
               id: t.id,
               ardName: t.ard_name,
               coordinates: t.coordinates,
+              clientCoordinates: t.client_coordinates,
               uf: t.uf,
               city: t.city,
               requester: t.requester,
@@ -96,73 +101,99 @@ const App: React.FC = () => {
     setCurrentView('dashboard');
   };
 
-  const handleAddTicket = async (ticket: Ticket) => {
+  const handleAddTicket = async (ticket: Ticket, attachmentFile: File | null) => {
     if (!user) return;
+    setLoading(true);
+
+    let finalAttachmentUrl = undefined;
+    let finalAttachmentName = undefined;
+
+    // 1. Upload File if exists
+    if (attachmentFile) {
+        const fileName = `${ticket.id}-${Date.now()}-${attachmentFile.name}`;
+        const { error: uploadError } = await supabase.storage.from('attachments').upload(fileName, attachmentFile);
+        
+        if (uploadError) {
+             alert('Aviso: O ticket será criado, mas houve erro no upload do anexo: ' + uploadError.message);
+        } else {
+             const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(fileName);
+             finalAttachmentUrl = publicUrl;
+             finalAttachmentName = attachmentFile.name;
+        }
+    }
     
-    // Insert into DB
+    // 2. Insert into DB
     const { error } = await supabase.from('tickets').insert({
-        id: ticket.id,
+        id: ticket.id.trim(), // Ensure no whitespace
         user_id: user.id,
         ard_name: ticket.ardName,
         coordinates: ticket.coordinates,
+        client_coordinates: ticket.clientCoordinates || null,
         uf: ticket.uf,
         city: ticket.city,
         requester: ticket.requester,
         type: ticket.type,
-        client: ticket.client,
-        value: ticket.value,
+        client: ticket.client || null,
+        value: ticket.value || 0,
         current_status: ticket.currentStatus,
         entry_date: ticket.entryDate,
         is_substitute: ticket.isSubstitute,
-        previous_ticket_id: ticket.previousTicketId,
-        attachment_name: ticket.attachmentName,
-        attachment_url: ticket.attachmentUrl // Might be null initially if logic handled separately, but form sends mock currently. 
+        previous_ticket_id: ticket.previousTicketId || null,
+        attachment_name: finalAttachmentName || null,
+        attachment_url: finalAttachmentUrl || null
     });
 
     if (error) {
         alert("Erro ao criar ticket: " + error.message);
+        setLoading(false);
         return;
     }
     
-    // Insert History
+    // 3. Insert History
     await supabase.from('ticket_history').insert({
-        ticket_id: ticket.id,
+        ticket_id: ticket.id.trim(),
         status: ticket.currentStatus,
         note: ticket.history[0].note,
         updated_by: user.name
     });
 
-    if (ticket.attachmentUrl && ticket.attachmentName) {
-         // Note: Real file upload should happen here if passed from form, currently form passes mock.
-         // Assuming NewEntryForm will be updated or handles upload separately.
-         // For now, refreshing tickets.
-    }
-
     await fetchTickets();
+    setLoading(false);
     setCurrentView('list');
     setIsMobileMenuOpen(false);
   };
 
   const handleDeleteTicket = async (ticketId: string) => {
-    const { error } = await supabase.from('tickets').delete().eq('id', ticketId);
-    if (!error) {
+    // 1. Delete History Manually first to ensure no constraint errors
+    const { error: historyError } = await supabase.from('ticket_history').delete().eq('ticket_id', ticketId);
+    
+    if (historyError) {
+        console.error("Erro ao deletar histórico:", historyError);
+        alert("Erro ao deletar histórico do ticket. Verifique suas permissões.");
+        return;
+    }
+
+    // 2. Delete Ticket
+    const { error: ticketError } = await supabase.from('tickets').delete().eq('id', ticketId);
+
+    if (!ticketError) {
         setTickets(prev => prev.filter(t => t.id !== ticketId));
         if(selectedTicket && selectedTicket.id === ticketId) {
             setSelectedTicket(null);
         }
     } else {
-        alert("Erro ao deletar: " + error.message);
+        console.error("Erro delete ticket:", ticketError);
+        alert(`Erro ao deletar o ticket: ${ticketError.message}`);
     }
   };
 
   const handleBulkImport = async (newTickets: Ticket[]) => {
-      // Basic implementation: loop inserts. For production, use RPC or bulk insert carefully.
       if(!user) return;
       setLoading(true);
 
       for (const t of newTickets) {
           const { error } = await supabase.from('tickets').insert({
-              id: t.id,
+              id: t.id.trim(),
               user_id: user.id,
               ard_name: t.ardName,
               coordinates: t.coordinates,
@@ -170,17 +201,17 @@ const App: React.FC = () => {
               city: t.city,
               requester: t.requester,
               type: t.type,
-              client: t.client,
+              client: t.client || null,
               value: 0,
               current_status: t.currentStatus,
               entry_date: t.entryDate,
               is_substitute: t.isSubstitute,
-              previous_ticket_id: t.previousTicketId
+              previous_ticket_id: t.previousTicketId || null
           });
           
           if (!error) {
               await supabase.from('ticket_history').insert({
-                  ticket_id: t.id,
+                  ticket_id: t.id.trim(),
                   status: t.currentStatus,
                   note: 'Importação em massa',
                   updated_by: user.name
@@ -195,24 +226,29 @@ const App: React.FC = () => {
     
     const { error } = await supabase.from('tickets').update({ current_status: newStatus }).eq('id', ticketId);
     
-    if (!error) {
-        await supabase.from('ticket_history').insert({
-            ticket_id: ticketId,
-            status: newStatus,
-            note: note,
-            updated_by: user.name
-        });
-        await fetchTickets(); // Refresh to get history
-        
-        // Update local state for immediate feedback (optimistic)
-        if (selectedTicket && selectedTicket.id === ticketId) {
-             const updatedTicket = {
-                 ...selectedTicket,
-                 currentStatus: newStatus,
-                 history: [...selectedTicket.history, { date: new Date().toISOString(), status: newStatus, note, updatedBy: user.name }]
-             };
-             setSelectedTicket(updatedTicket);
-        }
+    if (error) {
+        alert(`Erro ao atualizar status: ${error.message}`);
+        return;
+    }
+
+    // Sucesso ao atualizar ticket, insere histórico
+    await supabase.from('ticket_history').insert({
+        ticket_id: ticketId,
+        status: newStatus,
+        note: note,
+        updated_by: user.name
+    });
+    
+    await fetchTickets(); // Refresh
+    
+    // Update local state optimistic
+    if (selectedTicket && selectedTicket.id === ticketId) {
+            const updatedTicket = {
+                ...selectedTicket,
+                currentStatus: newStatus,
+                history: [...selectedTicket.history, { date: new Date().toISOString(), status: newStatus, note, updatedBy: user.name }]
+            };
+            setSelectedTicket(updatedTicket);
     }
   };
 
@@ -229,13 +265,14 @@ const App: React.FC = () => {
           });
           await fetchTickets();
           if (selectedTicket) setSelectedTicket({...selectedTicket, value: newValue});
+      } else {
+          alert("Erro ao atualizar valor: " + error.message);
       }
   };
 
   const handleUpdateAttachment = async (ticketId: string, file: File) => {
       if(!user) return;
 
-      // 1. Upload file
       const fileName = `${ticketId}-${Date.now()}-${file.name}`;
       const { data, error } = await supabase.storage.from('attachments').upload(fileName, file);
 
@@ -244,10 +281,8 @@ const App: React.FC = () => {
           return;
       }
 
-      // 2. Get Public URL
       const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(fileName);
 
-      // 3. Update Ticket
       const { error: updateError } = await supabase.from('tickets').update({
           attachment_name: file.name,
           attachment_url: publicUrl
@@ -269,7 +304,7 @@ const App: React.FC = () => {
     return <AuthScreen onLogin={handleLogin} />;
   }
 
-  // --- Sidebar Content Component ---
+  // --- Sidebar Content ---
   const SidebarContent = () => (
     <>
       <div className="p-6 flex items-center space-x-3 border-b border-slate-800 bg-slate-950">
@@ -278,7 +313,6 @@ const App: React.FC = () => {
                <h1 className="text-lg font-bold tracking-tight text-white">TelcoFlow</h1>
                <p className="text-xs text-slate-400">Manager Pro v2.0</p>
            </div>
-           {/* Close button for mobile inside sidebar */}
            <button 
              onClick={() => setIsMobileMenuOpen(false)} 
              className="md:hidden ml-auto text-slate-400 hover:text-white"
@@ -311,7 +345,6 @@ const App: React.FC = () => {
           </button>
       </nav>
 
-      {/* Widgets Area */}
       <SidebarWidgets />
 
       <div className="p-4 border-t border-slate-800 bg-slate-950">
@@ -335,7 +368,6 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
       
-      {/* Sidebar Desktop (Static) & Mobile (Off-canvas) */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col shadow-xl transition-transform duration-300 ease-in-out
         md:relative md:translate-x-0 
@@ -344,7 +376,6 @@ const App: React.FC = () => {
         <SidebarContent />
       </aside>
 
-      {/* Mobile Overlay Backdrop */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden" 
@@ -352,10 +383,8 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         
-        {/* Mobile Header */}
         <header className="md:hidden bg-slate-900 text-white p-4 flex items-center justify-between shadow-md z-30 sticky top-0">
            <div className="flex items-center space-x-2">
               <Radio className="h-6 w-6 text-blue-500" />
@@ -366,7 +395,6 @@ const App: React.FC = () => {
            </button>
         </header>
 
-        {/* Content Scrollable Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
             <header className="mb-6 md:mb-8 flex flex-col md:flex-row md:justify-between md:items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
                 <div className="mb-2 md:mb-0">
@@ -385,9 +413,9 @@ const App: React.FC = () => {
                 </div>
             </header>
 
-            {loading && <div className="text-center py-4 text-blue-600 font-medium">Carregando dados...</div>}
+            {loading && currentView !== 'dashboard' && <div className="text-center py-4 text-blue-600 font-medium">Carregando dados...</div>}
 
-            {currentView === 'dashboard' && <Dashboard tickets={tickets} />}
+            {currentView === 'dashboard' && <Dashboard tickets={tickets} isLoading={loading} />}
             {currentView === 'list' && <TicketList tickets={tickets} onViewDetail={setSelectedTicket} onDelete={handleDeleteTicket} onImport={handleBulkImport} />}
             {currentView === 'new' && <NewEntryForm user={user} onSubmit={handleAddTicket} onCancel={() => setCurrentView('dashboard')} />}
         </main>
