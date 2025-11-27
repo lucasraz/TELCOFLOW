@@ -1,4 +1,7 @@
+
 export type User = {
+  id: string; // UUID do Supabase
+  email?: string;
   name: string;
   ra: string;
   role: string;
@@ -11,7 +14,7 @@ export enum TicketType {
 }
 
 export enum TicketStatus {
-  RECEBIDO = 'Recebido', // Status inicial
+  RECEBIDO = 'Recebido',
   NA_FILA = 'Na Fila',
   PENDENCIA_CLIENTE = 'Pendência Cliente',
   PENDENCIA_EMPREITEIRA = 'Pendência Empreiteira',
@@ -21,6 +24,7 @@ export enum TicketStatus {
 }
 
 export type HistoryLog = {
+  id?: string;
   date: string; // ISO String
   status: TicketStatus;
   note: string;
@@ -28,21 +32,22 @@ export type HistoryLog = {
 };
 
 export type Ticket = {
-  id: string; // ID Manual inserido pelo usuário
+  id: string; // ID Manual (TC-...)
   ardName: string;
-  coordinates?: string; // Lat, Long
+  coordinates?: string;
   uf: string;
   city: string;
   requester: string;
   type: TicketType;
-  client?: string; // Apenas B2B
+  client?: string;
   value: number;
   currentStatus: TicketStatus;
-  createdAt: string; // Data de criação do registro (audit)
-  entryDate: string; // Data manual informada pelo usuário
+  createdAt: string;
+  entryDate: string;
   attachmentName?: string;
-  attachmentUrl?: string; // URL mock para o anexo
+  attachmentUrl?: string;
   isSubstitute: boolean;
   previousTicketId?: string;
   history: HistoryLog[];
+  user_id?: string; // Criador do ticket
 };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Calculator, Clock, StickyNote, Globe, Eraser, Plus, Trash2, Bell, BellRing } from 'lucide-react';
+import { ChevronDown, ChevronRight, Calculator, Clock, StickyNote, Globe, Plus, Trash2, Bell, BellRing } from 'lucide-react';
 import { Button } from './Button';
+import { supabase } from '../supabaseClient';
 
 // --- Widget Container (Accordion) ---
 const WidgetSection: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean }> = ({ title, icon, children, defaultOpen = false }) => {
@@ -99,7 +100,7 @@ const CalculatorWidget = () => {
   );
 };
 
-// --- 3. Reminder & Alarm Widget ---
+// --- 3. Reminder & Alarm Widget (Connected to DB) ---
 type Reminder = {
   id: string;
   text: string;
@@ -108,26 +109,35 @@ type Reminder = {
 };
 
 const RemindersWidget = () => {
-  const [reminders, setReminders] = useState<Reminder[]>(() => {
-    const saved = localStorage.getItem('telcoflow_reminders');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [newText, setNewText] = useState('');
   const [newDate, setNewDate] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Request Notification Permission on Mount
+  // Fetch from DB
   useEffect(() => {
+    const fetchReminders = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if(!user) return;
+
+        const { data, error } = await supabase
+            .from('reminders')
+            .select('*')
+            .eq('user_id', user.id);
+        
+        if (data && !error) {
+            setReminders(data);
+        }
+    };
+    fetchReminders();
+    
+    // Request Permission
     if ('Notification' in window && Notification.permission !== 'granted') {
       Notification.requestPermission();
     }
   }, []);
 
-  // Save to LocalStorage
-  useEffect(() => {
-    localStorage.setItem('telcoflow_reminders', JSON.stringify(reminders));
-  }, [reminders]);
-
-  // Check Interval
+  // Check Interval for Notifications
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
@@ -138,36 +148,45 @@ const RemindersWidget = () => {
           if (Notification.permission === 'granted') {
             new Notification("Lembrete TelcoFlow", {
               body: r.text,
-              icon: '/vite.svg' // Fallback icon
             });
-          } else {
-            // Fallback if no permission
-            alert(`LEMBRETE: ${r.text}`);
           }
+          // Update DB as notified (optional, skipping to save calls, just local state update for visual)
           return { ...r, notified: true };
         }
         return r;
       }));
-    }, 10000); // Check every 10 seconds
+    }, 10000); 
 
     return () => clearInterval(interval);
   }, []);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newText || !newDate) return;
-    const newItem: Reminder = {
-      id: Date.now().toString(),
-      text: newText,
-      datetime: newDate,
-      notified: false
-    };
-    setReminders([...reminders, newItem]);
-    setNewText('');
-    setNewDate('');
+    setLoading(true);
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+        const { data, error } = await supabase.from('reminders').insert({
+            user_id: user.id,
+            text: newText,
+            datetime: newDate,
+            notified: false
+        }).select().single();
+
+        if (data && !error) {
+            setReminders(prev => [...prev, data]);
+            setNewText('');
+            setNewDate('');
+        }
+    }
+    setLoading(false);
   };
 
-  const handleDelete = (id: string) => {
-    setReminders(reminders.filter(r => r.id !== id));
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('reminders').delete().eq('id', id);
+    if (!error) {
+        setReminders(reminders.filter(r => r.id !== id));
+    }
   };
 
   return (
@@ -190,7 +209,7 @@ const RemindersWidget = () => {
           />
           <button 
             onClick={handleAdd}
-            disabled={!newText || !newDate}
+            disabled={!newText || !newDate || loading}
             className="bg-blue-600 text-white rounded px-2 hover:bg-blue-700 disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />

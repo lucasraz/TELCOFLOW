@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Ticket, TicketStatus } from './types';
-import { INITIAL_TICKETS } from './constants';
 import { AuthScreen } from './components/AuthScreen';
 import { Dashboard } from './components/Dashboard';
 import { NewEntryForm } from './components/NewEntryForm';
@@ -8,114 +7,261 @@ import { TicketList } from './components/TicketList';
 import { TicketWorkflow } from './components/TicketWorkflow';
 import { SidebarWidgets } from './components/SidebarWidgets';
 import { LayoutGrid, PlusCircle, List, LogOut, Radio, Menu, X } from 'lucide-react';
+import { supabase } from './supabaseClient';
 
 // Main App Component
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [tickets, setTickets] = useState<Ticket[]>(INITIAL_TICKETS);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [currentView, setCurrentView] = useState<'dashboard' | 'list' | 'new'>('dashboard');
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Check active session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && session.user) {
+             const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+             if (profile) {
+                 setUser({
+                     id: session.user.id,
+                     email: session.user.email,
+                     name: profile.name,
+                     ra: profile.ra,
+                     role: profile.role,
+                     networkLogin: profile.network_login
+                 });
+                 fetchTickets();
+             }
+        }
+    };
+    checkSession();
+  }, []);
+
+  const fetchTickets = async () => {
+      setLoading(true);
+      const { data: ticketsData, error } = await supabase.from('tickets').select('*');
+      if (error) {
+          console.error('Error fetching tickets:', error);
+          setLoading(false);
+          return;
+      }
+
+      // Fetch histories for these tickets (Doing it simply for now, typically we'd join or fetch on demand)
+      const ticketsWithHistory: Ticket[] = await Promise.all(ticketsData.map(async (t: any) => {
+          const { data: history } = await supabase.from('ticket_history').select('*').eq('ticket_id', t.id);
+          return {
+              id: t.id,
+              ardName: t.ard_name,
+              coordinates: t.coordinates,
+              uf: t.uf,
+              city: t.city,
+              requester: t.requester,
+              type: t.type,
+              client: t.client,
+              value: parseFloat(t.value),
+              currentStatus: t.current_status,
+              createdAt: t.created_at,
+              entryDate: t.entry_date,
+              attachmentName: t.attachment_name,
+              attachmentUrl: t.attachment_url,
+              isSubstitute: t.is_substitute,
+              previousTicketId: t.previous_ticket_id,
+              user_id: t.user_id,
+              history: history?.map((h: any) => ({
+                  id: h.id,
+                  date: h.date,
+                  status: h.status,
+                  note: h.note,
+                  updatedBy: h.updated_by
+              })) || []
+          };
+      }));
+      
+      setTickets(ticketsWithHistory);
+      setLoading(false);
+  };
 
   const handleLogin = (loggedInUser: User) => {
     setUser(loggedInUser);
+    fetchTickets();
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
+    setTickets([]);
     setCurrentView('dashboard');
   };
 
-  const handleAddTicket = (ticket: Ticket) => {
-    setTickets([ticket, ...tickets]);
-    setCurrentView('list');
-    setIsMobileMenuOpen(false); // Close menu on mobile after action
-  };
-
-  const handleDeleteTicket = (ticketId: string) => {
-    setTickets(prev => prev.filter(t => t.id !== ticketId));
-    if(selectedTicket && selectedTicket.id === ticketId) {
-        setSelectedTicket(null);
-    }
-  };
-
-  const handleBulkImport = (newTickets: Ticket[]) => {
-      setTickets(prev => [...newTickets, ...prev]);
-  };
-
-  const handleUpdateStatus = (ticketId: string, newStatus: TicketStatus, note: string) => {
+  const handleAddTicket = async (ticket: Ticket) => {
     if (!user) return;
     
-    const updateTicket = (t: Ticket): Ticket => ({
-        ...t,
-        currentStatus: newStatus,
-        history: [
-          ...t.history,
-          {
-            date: new Date().toISOString(),
-            status: newStatus,
-            note,
-            updatedBy: user.name
-          }
-        ]
+    // Insert into DB
+    const { error } = await supabase.from('tickets').insert({
+        id: ticket.id,
+        user_id: user.id,
+        ard_name: ticket.ardName,
+        coordinates: ticket.coordinates,
+        uf: ticket.uf,
+        city: ticket.city,
+        requester: ticket.requester,
+        type: ticket.type,
+        client: ticket.client,
+        value: ticket.value,
+        current_status: ticket.currentStatus,
+        entry_date: ticket.entryDate,
+        is_substitute: ticket.isSubstitute,
+        previous_ticket_id: ticket.previousTicketId,
+        attachment_name: ticket.attachmentName,
+        attachment_url: ticket.attachmentUrl // Might be null initially if logic handled separately, but form sends mock currently. 
     });
 
-    setTickets(prevTickets => prevTickets.map(t => {
-      if (t.id === ticketId) {
-        return updateTicket(t);
-      }
-      return t;
-    }));
+    if (error) {
+        alert("Erro ao criar ticket: " + error.message);
+        return;
+    }
+    
+    // Insert History
+    await supabase.from('ticket_history').insert({
+        ticket_id: ticket.id,
+        status: ticket.currentStatus,
+        note: ticket.history[0].note,
+        updated_by: user.name
+    });
 
-    if (selectedTicket && selectedTicket.id === ticketId) {
-        setSelectedTicket(prev => prev ? updateTicket(prev) : null);
+    if (ticket.attachmentUrl && ticket.attachmentName) {
+         // Note: Real file upload should happen here if passed from form, currently form passes mock.
+         // Assuming NewEntryForm will be updated or handles upload separately.
+         // For now, refreshing tickets.
+    }
+
+    await fetchTickets();
+    setCurrentView('list');
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleDeleteTicket = async (ticketId: string) => {
+    const { error } = await supabase.from('tickets').delete().eq('id', ticketId);
+    if (!error) {
+        setTickets(prev => prev.filter(t => t.id !== ticketId));
+        if(selectedTicket && selectedTicket.id === ticketId) {
+            setSelectedTicket(null);
+        }
+    } else {
+        alert("Erro ao deletar: " + error.message);
     }
   };
 
-  const handleUpdateValue = (ticketId: string, newValue: number) => {
+  const handleBulkImport = async (newTickets: Ticket[]) => {
+      // Basic implementation: loop inserts. For production, use RPC or bulk insert carefully.
+      if(!user) return;
+      setLoading(true);
+
+      for (const t of newTickets) {
+          const { error } = await supabase.from('tickets').insert({
+              id: t.id,
+              user_id: user.id,
+              ard_name: t.ardName,
+              coordinates: t.coordinates,
+              uf: t.uf,
+              city: t.city,
+              requester: t.requester,
+              type: t.type,
+              client: t.client,
+              value: 0,
+              current_status: t.currentStatus,
+              entry_date: t.entryDate,
+              is_substitute: t.isSubstitute,
+              previous_ticket_id: t.previousTicketId
+          });
+          
+          if (!error) {
+              await supabase.from('ticket_history').insert({
+                  ticket_id: t.id,
+                  status: t.currentStatus,
+                  note: 'Importação em massa',
+                  updated_by: user.name
+              });
+          }
+      }
+      await fetchTickets();
+  };
+
+  const handleUpdateStatus = async (ticketId: string, newStatus: TicketStatus, note: string) => {
+    if (!user) return;
+    
+    const { error } = await supabase.from('tickets').update({ current_status: newStatus }).eq('id', ticketId);
+    
+    if (!error) {
+        await supabase.from('ticket_history').insert({
+            ticket_id: ticketId,
+            status: newStatus,
+            note: note,
+            updated_by: user.name
+        });
+        await fetchTickets(); // Refresh to get history
+        
+        // Update local state for immediate feedback (optimistic)
+        if (selectedTicket && selectedTicket.id === ticketId) {
+             const updatedTicket = {
+                 ...selectedTicket,
+                 currentStatus: newStatus,
+                 history: [...selectedTicket.history, { date: new Date().toISOString(), status: newStatus, note, updatedBy: user.name }]
+             };
+             setSelectedTicket(updatedTicket);
+        }
+    }
+  };
+
+  const handleUpdateValue = async (ticketId: string, newValue: number) => {
       if(!user) return;
 
-      const updateTicket = (t: Ticket): Ticket => ({
-          ...t,
-          value: newValue,
-          history: [
-              ...t.history,
-              {
-                  date: new Date().toISOString(),
-                  status: t.currentStatus,
-                  note: `Valor atualizado para R$ ${newValue}`,
-                  updatedBy: user.name
-              }
-          ]
-      });
-
-      setTickets(prev => prev.map(t => t.id === ticketId ? updateTicket(t) : t));
-      if(selectedTicket && selectedTicket.id === ticketId) {
-          setSelectedTicket(prev => prev ? updateTicket(prev) : null);
+      const { error } = await supabase.from('tickets').update({ value: newValue }).eq('id', ticketId);
+      if(!error) {
+          await supabase.from('ticket_history').insert({
+              ticket_id: ticketId,
+              status: selectedTicket?.currentStatus || TicketStatus.RECEBIDO,
+              note: `Valor atualizado para R$ ${newValue}`,
+              updated_by: user.name
+          });
+          await fetchTickets();
+          if (selectedTicket) setSelectedTicket({...selectedTicket, value: newValue});
       }
   };
 
-  const handleUpdateAttachment = (ticketId: string, file: File) => {
+  const handleUpdateAttachment = async (ticketId: string, file: File) => {
       if(!user) return;
-      
-      const updateTicket = (t: Ticket): Ticket => ({
-          ...t,
-          attachmentName: file.name,
-          attachmentUrl: URL.createObjectURL(file), // Create fake URL
-          history: [
-              ...t.history,
-              {
-                  date: new Date().toISOString(),
-                  status: t.currentStatus,
-                  note: `Anexo atualizado: ${file.name}`,
-                  updatedBy: user.name
-              }
-          ]
-      });
 
-      setTickets(prev => prev.map(t => t.id === ticketId ? updateTicket(t) : t));
-      if (selectedTicket && selectedTicket.id === ticketId) {
-          setSelectedTicket(prev => prev ? updateTicket(prev) : null);
+      // 1. Upload file
+      const fileName = `${ticketId}-${Date.now()}-${file.name}`;
+      const { data, error } = await supabase.storage.from('attachments').upload(fileName, file);
+
+      if (error) {
+          alert('Erro no upload: ' + error.message);
+          return;
+      }
+
+      // 2. Get Public URL
+      const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(fileName);
+
+      // 3. Update Ticket
+      const { error: updateError } = await supabase.from('tickets').update({
+          attachment_name: file.name,
+          attachment_url: publicUrl
+      }).eq('id', ticketId);
+
+      if(!updateError) {
+           await supabase.from('ticket_history').insert({
+              ticket_id: ticketId,
+              status: selectedTicket?.currentStatus || TicketStatus.RECEBIDO,
+              note: `Anexo atualizado: ${file.name}`,
+              updated_by: user.name
+          });
+          await fetchTickets();
+           if (selectedTicket) setSelectedTicket({...selectedTicket, attachmentName: file.name, attachmentUrl: publicUrl});
       }
   };
 
@@ -238,6 +384,8 @@ const App: React.FC = () => {
                     <span className="text-xs text-slate-400 mt-1 capitalize">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
                 </div>
             </header>
+
+            {loading && <div className="text-center py-4 text-blue-600 font-medium">Carregando dados...</div>}
 
             {currentView === 'dashboard' && <Dashboard tickets={tickets} />}
             {currentView === 'list' && <TicketList tickets={tickets} onViewDetail={setSelectedTicket} onDelete={handleDeleteTicket} onImport={handleBulkImport} />}
