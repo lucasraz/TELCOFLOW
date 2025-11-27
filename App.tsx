@@ -164,26 +164,27 @@ const App: React.FC = () => {
   };
 
   const handleDeleteTicket = async (ticketId: string) => {
-    // 1. Delete History Manually first to ensure no constraint errors
-    const { error: historyError } = await supabase.from('ticket_history').delete().eq('ticket_id', ticketId);
-    
-    if (historyError) {
-        console.error("Erro ao deletar histórico:", historyError);
-        alert("Erro ao deletar histórico do ticket. Verifique suas permissões.");
-        return;
-    }
+    try {
+        // Agora confiamos que o ON DELETE CASCADE está configurado corretamente no banco.
+        // Isso apagará o ticket e automaticamente o histórico associado.
+        const { error: ticketError } = await supabase.from('tickets').delete().eq('id', ticketId);
 
-    // 2. Delete Ticket
-    const { error: ticketError } = await supabase.from('tickets').delete().eq('id', ticketId);
+        if (ticketError) {
+            console.error("Erro delete ticket:", ticketError);
+            alert(`Erro ao deletar o ticket: ${ticketError.message}`);
+            return;
+        }
 
-    if (!ticketError) {
+        // Atualiza o estado local removendo o item
         setTickets(prev => prev.filter(t => t.id !== ticketId));
+        
+        // Se o ticket deletado estiver aberto no modal, fecha ele
         if(selectedTicket && selectedTicket.id === ticketId) {
             setSelectedTicket(null);
         }
-    } else {
-        console.error("Erro delete ticket:", ticketError);
-        alert(`Erro ao deletar o ticket: ${ticketError.message}`);
+    } catch (err: any) {
+         console.error("Erro inesperado:", err);
+         alert("Ocorreu um erro inesperado ao tentar deletar.");
     }
   };
 

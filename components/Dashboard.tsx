@@ -11,6 +11,7 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false }) => {
   const [dateRange, setDateRange] = useState<'all' | '30days' | '7days'>('all');
   const [filterType, setFilterType] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showContent, setShowContent] = useState(false);
 
   // Effect to trigger entry animations
@@ -36,8 +37,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
         result = result.filter(t => t.type === filterType);
     }
 
+    // Filter by Status
+    if (filterStatus !== 'all') {
+        result = result.filter(t => t.currentStatus === filterStatus);
+    }
+
     return result;
-  }, [tickets, dateRange, filterType]);
+  }, [tickets, dateRange, filterType, filterStatus]);
 
   const stats = useMemo(() => {
     const approvedValue = filteredTickets
@@ -153,6 +159,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
            >
              <option value="all">Todos os Tipos</option>
              {Object.values(TicketType).map(t => <option key={t} value={t}>{t}</option>)}
+           </select>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm p-1 flex items-center space-x-1 border border-slate-200 transition-shadow hover:shadow-md">
+           <Filter className="h-4 w-4 text-slate-500 ml-2 mr-1" />
+           <select 
+             className="bg-transparent border-none text-sm focus:ring-0 text-slate-700 py-1 cursor-pointer"
+             value={filterStatus}
+             onChange={(e) => setFilterStatus(e.target.value)}
+           >
+             <option value="all">Todos os Status</option>
+             {Object.values(TicketStatus).map(s => <option key={s} value={s}>{s}</option>)}
            </select>
         </div>
       </div>

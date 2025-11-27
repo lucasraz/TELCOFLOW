@@ -10,7 +10,7 @@ interface TicketListProps {
   onImport?: (tickets: Ticket[]) => void;
 }
 
-type SortKey = 'id' | 'ardName' | 'value' | 'entryDate' | 'currentStatus';
+type SortKey = 'id' | 'ardName' | 'value' | 'entryDate' | 'currentStatus' | 'requester';
 
 export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, onDelete, onImport }) => {
   const [filterType, setFilterType] = useState<string>('all');
@@ -38,7 +38,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
         const toDate = dateTo ? new Date(dateTo).getTime() : Infinity;
         const matchesDate = ticketDate >= fromDate && ticketDate <= toDate;
 
-        // Search: ID, ARD, Cidade OU ID Substituto
+        // Search: ID, ARD, Cidade
         const term = searchTerm.toLowerCase();
         let matchesSearch = ticket.ardName.toLowerCase().includes(term) || 
                             ticket.city.toLowerCase().includes(term) ||
@@ -46,7 +46,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
         
         // Search in substitute ID only if enabled
         if (searchSubstitute) {
-             // Se o toggle estiver ativo, damos prioridade para encontrar quem tem esse ID como anterior
+             // Se o toggle estiver ativo, verificamos também o campo previousTicketId
              if (ticket.previousTicketId && ticket.previousTicketId.toLowerCase().includes(term)) {
                  matchesSearch = true;
              }
@@ -61,25 +61,27 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
               let aValue: any = a[sortConfig.key];
               let bValue: any = b[sortConfig.key];
 
-              // Handle specific types
               if (sortConfig.key === 'value') {
-                   // numeric is straightforward
+                   // numeric sort
+                   if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+                   if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+                   return 0;
               } else if (sortConfig.key === 'entryDate') {
-                  aValue = new Date(aValue).getTime();
-                  bValue = new Date(bValue).getTime();
+                  // date sort
+                  const dateA = new Date(aValue).getTime();
+                  const dateB = new Date(bValue).getTime();
+                  if (dateA < dateB) return sortConfig.direction === 'asc' ? -1 : 1;
+                  if (dateA > dateB) return sortConfig.direction === 'asc' ? 1 : -1;
+                  return 0;
               } else {
-                  // string comparison
-                  aValue = String(aValue).toLowerCase();
-                  bValue = String(bValue).toLowerCase();
+                  // string sort with numeric awareness (e.g. TC-2 before TC-10)
+                  const strA = String(aValue || '').toLowerCase();
+                  const strB = String(bValue || '').toLowerCase();
+                  
+                  return sortConfig.direction === 'asc' 
+                    ? strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' })
+                    : strB.localeCompare(strA, undefined, { numeric: true, sensitivity: 'base' });
               }
-
-              if (aValue < bValue) {
-                  return sortConfig.direction === 'asc' ? -1 : 1;
-              }
-              if (aValue > bValue) {
-                  return sortConfig.direction === 'asc' ? 1 : -1;
-              }
-              return 0;
           });
       }
 
@@ -96,7 +98,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
 
   const getSortIcon = (key: SortKey) => {
       if (!sortConfig || sortConfig.key !== key) {
-          return <ArrowUpDown className="h-3 w-3 ml-1 text-slate-400" />;
+          return <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-50" />;
       }
       return sortConfig.direction === 'asc' ? 
           <ArrowUp className="h-3 w-3 ml-1 text-blue-600" /> : 
@@ -264,14 +266,14 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                 />
             </div>
             
-            <label className="flex items-center space-x-2 cursor-pointer bg-slate-50 px-3 py-2 rounded border border-slate-200 w-full md:w-auto hover:bg-slate-100 transition-colors">
+            <label className={`flex items-center space-x-2 cursor-pointer px-3 py-2 rounded border w-full md:w-auto transition-all select-none ${searchSubstitute ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'}`}>
                 <input 
                     type="checkbox" 
                     checked={searchSubstitute} 
                     onChange={e => setSearchSubstitute(e.target.checked)}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
-                <span className="text-sm text-slate-700 select-none">Buscar IDs Substitutos</span>
+                <span className={`text-sm font-medium ${searchSubstitute ? 'text-blue-700' : 'text-slate-700'}`}>Buscar IDs Substitutos</span>
             </label>
         </div>
         
@@ -279,7 +281,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
         <div className="flex flex-col xl:flex-row gap-4 items-center justify-between">
             <div className="flex flex-col sm:flex-row items-center gap-2 w-full xl:w-auto">
                 <div className="flex items-center space-x-1 w-full sm:w-auto">
-                    <span className="text-xs text-slate-500 whitespace-nowrap">De:</span>
+                    <span className="text-xs text-slate-500 whitespace-nowrap font-medium">De:</span>
                     <input 
                         type="date" 
                         className="rounded-md border-slate-300 border p-2 text-sm w-full" 
@@ -288,7 +290,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                     />
                 </div>
                 <div className="flex items-center space-x-1 w-full sm:w-auto">
-                     <span className="text-xs text-slate-500 whitespace-nowrap">Até:</span>
+                     <span className="text-xs text-slate-500 whitespace-nowrap font-medium">Até:</span>
                      <input 
                         type="date" 
                         className="rounded-md border-slate-300 border p-2 text-sm w-full" 
@@ -384,19 +386,19 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
             <tr>
-              <th scope="col" onClick={() => requestSort('id')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group">
+              <th scope="col" onClick={() => requestSort('id')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
                   <div className="flex items-center">ID / Data {getSortIcon('id')}</div>
               </th>
-              <th scope="col" onClick={() => requestSort('ardName')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group">
+              <th scope="col" onClick={() => requestSort('ardName')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
                   <div className="flex items-center">Local {getSortIcon('ardName')}</div>
               </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Info
+              <th scope="col" onClick={() => requestSort('requester')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
+                  <div className="flex items-center">Info (Solicitante) {getSortIcon('requester')}</div>
               </th>
-              <th scope="col" onClick={() => requestSort('value')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group">
+              <th scope="col" onClick={() => requestSort('value')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
                   <div className="flex items-center">Tipo / Valor {getSortIcon('value')}</div>
               </th>
-              <th scope="col" onClick={() => requestSort('currentStatus')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group">
+              <th scope="col" onClick={() => requestSort('currentStatus')} className="px-6 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none">
                   <div className="flex items-center">Status {getSortIcon('currentStatus')}</div>
               </th>
               <th scope="col" className="relative px-6 py-3"><span className="sr-only">Ações</span></th>
@@ -406,10 +408,10 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
             {filteredTickets.map((ticket) => {
                 const slaBreached = isSlaBreached(ticket);
                 return (
-              <tr key={ticket.id} className="hover:bg-slate-50 transition-colors">
+              <tr key={ticket.id} className="hover:bg-slate-50 transition-colors group">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center space-x-2">
-                      <div className="text-sm font-bold text-blue-600">{ticket.id}</div>
+                      <div className="text-sm font-bold text-blue-600 group-hover:text-blue-700 transition-colors">{ticket.id}</div>
                       {ticket.isSubstitute && <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] rounded border border-yellow-200">SUB</span>}
                   </div>
                   {ticket.isSubstitute && ticket.previousTicketId && (
@@ -428,8 +430,8 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                   {ticket.coordinates && <div className="text-[10px] text-slate-400 font-mono mt-0.5">{ticket.coordinates}</div>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                  <div>{ticket.requester}</div>
-                  {ticket.client && <div className="text-xs text-slate-400 font-medium">{ticket.client}</div>}
+                  <div className="font-medium text-slate-700">{ticket.requester}</div>
+                  {ticket.client && <div className="text-xs text-slate-400">{ticket.client}</div>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${ticket.type === TicketType.B2B ? 'bg-purple-100 text-purple-800' : 'bg-orange-100 text-orange-800'}`}>
@@ -452,15 +454,15 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                    </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end space-x-3">
-                    <button onClick={() => onViewDetail(ticket)} className="text-blue-600 hover:text-blue-900 flex items-center" title="Ver Detalhes">
+                  <div className="flex items-center justify-end space-x-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => onViewDetail(ticket)} className="text-blue-600 hover:text-blue-900 flex items-center p-1 rounded hover:bg-blue-50" title="Ver Detalhes">
                         <Eye className="h-4 w-4" />
                     </button>
                     <button onClick={() => {
                         if(window.confirm(`Tem certeza que deseja deletar o ticket ${ticket.id}? Essa ação não pode ser desfeita.`)) {
                             onDelete(ticket.id);
                         }
-                    }} className="text-red-400 hover:text-red-700 flex items-center" title="Deletar">
+                    }} className="text-red-400 hover:text-red-700 flex items-center p-1 rounded hover:bg-red-50" title="Deletar">
                         <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
