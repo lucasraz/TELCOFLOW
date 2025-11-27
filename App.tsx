@@ -166,7 +166,14 @@ const App: React.FC = () => {
   const handleDeleteTicket = async (ticketId: string) => {
     try {
         setLoading(true);
-        // Com ON DELETE CASCADE configurado no Supabase, apenas deletamos o ticket pai.
+        // Primeiro tenta deletar o histórico explicitamente para evitar erros se o Cascade falhar ou não existir
+        const { error: historyError } = await supabase.from('ticket_history').delete().eq('ticket_id', ticketId);
+        
+        // Se der erro de permissão no histórico, loga mas tenta deletar o ticket (confiando no cascade)
+        if (historyError) {
+             console.warn("Aviso ao deletar histórico (pode ser ignorado se cascade estiver ativo):", historyError);
+        }
+
         const { error: ticketError } = await supabase.from('tickets').delete().eq('id', ticketId);
 
         if (ticketError) {
@@ -392,9 +399,14 @@ const App: React.FC = () => {
               <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-400 flex items-center justify-center text-sm font-bold shadow-md text-white">
                   {user.name.charAt(0)}
               </div>
-              <div className="overflow-hidden">
+              <div className="overflow-hidden w-full">
                   <p className="text-sm font-medium truncate text-white">{user.name}</p>
                   <p className="text-xs text-slate-400 truncate">{user.role}</p>
+                  {user.networkLogin && (
+                    <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5" title="Login de Rede">
+                       Login: {user.networkLogin}
+                    </p>
+                  )}
               </div>
           </div>
           <button onClick={handleLogout} className="w-full flex items-center space-x-2 px-2 py-2 text-red-400 hover:text-red-300 transition-colors text-sm hover:bg-red-900/10 rounded-md">
@@ -445,10 +457,15 @@ const App: React.FC = () => {
                     </h2>
                     <p className="text-xs text-slate-500 mt-1">Gerencie o fluxo de B2B e Desligue Cobre com eficiência.</p>
                 </div>
-                <div className="flex flex-col md:items-end items-start">
+                <div className="flex flex-col md:items-end items-start gap-1">
                     <span className="inline-flex px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-100">
-                        RA: {user.ra}
+                        Matrícula: {user.ra}
                     </span>
+                    {user.networkLogin && (
+                        <span className="text-xs text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            Login: {user.networkLogin}
+                        </span>
+                    )}
                     <span className="text-xs text-slate-400 mt-1 capitalize">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
                 </div>
             </header>
