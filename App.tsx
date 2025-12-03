@@ -20,30 +20,46 @@ const App: React.FC = () => {
 
   // Check active session on mount and listen for changes
   useEffect(() => {
-    // Função auxiliar para carregar perfil
-    const loadUserProfile = async (userId: string, email?: string) => {
+    // Função auxiliar para carregar perfil com Fallback robusto
+    const loadUserProfile = async (sessionUser: any) => {
          try {
-             const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+             // Tenta buscar da tabela profiles
+             const { data: profile, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', sessionUser.id)
+                .maybeSingle();
              
-             if (error) {
-                 console.error("Erro ao carregar perfil:", error);
-                 return;
-             }
-
+             // Se houver perfil no banco, usa ele
              if (profile) {
                  setUser({
-                     id: userId,
-                     email: email,
+                     id: sessionUser.id,
+                     email: sessionUser.email,
                      name: profile.name,
                      ra: profile.ra,
                      role: profile.role,
                      networkLogin: profile.network_login
                  });
-                 // Carrega tickets apenas após ter o usuário
-                 fetchTickets(); 
+             } else {
+                 // Fallback: Se a trigger falhou ou banco lento, usa metadados do Auth
+                 // Isso garante que o usuário consiga logar
+                 const meta = sessionUser.user_metadata || {};
+                 console.log("Perfil DB não encontrado, usando fallback metadata.");
+                 
+                 setUser({
+                    id: sessionUser.id,
+                    email: sessionUser.email,
+                    name: meta.name || 'Usuário',
+                    ra: meta.ra || '',
+                    role: meta.role || 'Analista',
+                    networkLogin: meta.network_login || ''
+                 });
              }
+             
+             // Inicia carregamento dos tickets
+             fetchTickets(); 
          } catch (e) {
-             console.error("Exceção ao carregar perfil:", e);
+             console.error("Exceção crítica ao carregar perfil:", e);
          }
     };
 
@@ -53,7 +69,6 @@ const App: React.FC = () => {
             const { data: { session }, error } = await supabase.auth.getSession();
             
             if (error) {
-                // Se der erro de refresh token, forçamos logout local para pedir login novamente
                 console.warn("Sessão inválida ou expirada:", error.message);
                 await supabase.auth.signOut();
                 setUser(null);
@@ -61,7 +76,7 @@ const App: React.FC = () => {
             }
 
             if (session && session.user) {
-                await loadUserProfile(session.user.id, session.user.email);
+                await loadUserProfile(session.user);
             }
         } catch (err) {
             console.error("Erro inesperado na sessão:", err);
@@ -74,7 +89,7 @@ const App: React.FC = () => {
     // 2. Listen for auth changes (sign in, sign out, token refresh, auto-logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-         await loadUserProfile(session.user.id, session.user.email);
+         await loadUserProfile(session.user);
       } else if (event === 'SIGNED_OUT') {
          setUser(null);
          setTickets([]);
@@ -141,9 +156,9 @@ const App: React.FC = () => {
   };
 
   const handleLogin = (loggedInUser: User) => {
-    // O onAuthStateChange já vai lidar com isso, mas podemos manter para feedback imediato se necessário
-    // setUser(loggedInUser);
-    // fetchTickets();
+    // Atualização otimista para UI instantânea
+    setUser(loggedInUser);
+    fetchTickets();
   };
 
   const handleLogout = async () => {

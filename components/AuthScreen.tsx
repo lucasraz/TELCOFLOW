@@ -24,7 +24,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Animation Effect (Mantido igual)
+  // Animation Effect
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -85,23 +85,31 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
             });
 
             if (error) throw error;
+            
             if (data.user) {
-                // Fetch Profile Data
-                const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', data.user.id)
-                    .single();
+                // Tenta buscar perfil, mas usa Fallback se falhar para não travar o login
+                let userProfile = null;
                 
-                if (profileError) throw profileError;
+                try {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', data.user.id)
+                        .maybeSingle(); // maybeSingle evita erro 406 se não existir
+                    userProfile = profile;
+                } catch (err) {
+                    console.warn("Erro ao buscar perfil (usando fallback):", err);
+                }
+
+                const meta = data.user.user_metadata || {};
 
                 onLogin({
                     id: data.user.id,
                     email: data.user.email,
-                    name: profile.name,
-                    ra: profile.ra,
-                    role: profile.role,
-                    networkLogin: profile.network_login
+                    name: userProfile?.name || meta.name || 'Usuário',
+                    ra: userProfile?.ra || meta.ra || '',
+                    role: userProfile?.role || meta.role || 'Analista',
+                    networkLogin: userProfile?.network_login || meta.network_login || ''
                 });
             }
         } else {
@@ -121,7 +129,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
 
             if (error) throw error;
             if (data.user) {
-                // Auto login on signup if successful
+                 // Auto login on signup logic
                  onLogin({
                     id: data.user.id,
                     email: data.user.email,
