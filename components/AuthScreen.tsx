@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { Button } from './Button';
-import { Radio, AlertCircle } from 'lucide-react';
+import { Radio, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { ROLES } from '../constants';
 import { supabase } from '../supabaseClient';
 
@@ -13,6 +13,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Form States
   const [email, setEmail] = useState('');
@@ -247,11 +248,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
 
             <div>
               <label className="block text-sm font-medium text-slate-700">Senha</label>
-              <input
-                type="password" required
-                className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white/50"
-                value={password} onChange={e => setPassword(e.target.value)}
-              />
+              <div className="relative mt-1">
+                <input
+                    type={showPassword ? "text" : "password"} 
+                    required
+                    className="block w-full px-3 py-2 pr-10 border border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white/50"
+                    value={password} 
+                    onChange={e => setPassword(e.target.value)}
+                />
+                <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                    onClick={() => setShowPassword(!showPassword)}
+                >
+                    {showPassword ? (
+                        <EyeOff className="h-5 w-5" aria-hidden="true" />
+                    ) : (
+                        <Eye className="h-5 w-5" aria-hidden="true" />
+                    )}
+                </button>
+              </div>
             </div>
 
             <div className="pt-2">
