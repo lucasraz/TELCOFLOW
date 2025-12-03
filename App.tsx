@@ -75,7 +75,7 @@ const App: React.FC = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
          await loadUserProfile(session.user.id, session.user.email);
-      } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      } else if (event === 'SIGNED_OUT') {
          setUser(null);
          setTickets([]);
          setCurrentView('dashboard');
