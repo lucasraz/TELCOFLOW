@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Ticket, TicketStatus, TicketType } from '../types';
 import { Button } from './Button';
-import { Download, Search, Trash2, AlertTriangle, Upload, FileSpreadsheet, MapPin, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Download, Search, Trash2, AlertTriangle, Upload, FileSpreadsheet, MapPin, Eye, ArrowUpDown, ArrowUp, ArrowDown, Clock } from 'lucide-react';
 
 interface TicketListProps {
   tickets: Ticket[];
@@ -42,14 +42,18 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
         const term = searchTerm.toLowerCase();
         let matchesSearch = false;
 
-        if (searchSubstitute) {
-             // Se o toggle estiver ativo, busca EXCLUSIVAMENTE no ID Anterior (previousTicketId)
-             matchesSearch = ticket.previousTicketId ? ticket.previousTicketId.toLowerCase().includes(term) : false;
+        if(!term) {
+            matchesSearch = true;
         } else {
-             // Busca Padrão: ID, ARD, Cidade
-             matchesSearch = ticket.ardName.toLowerCase().includes(term) || 
-                             ticket.city.toLowerCase().includes(term) ||
-                             ticket.id.toLowerCase().includes(term);
+             if (searchSubstitute) {
+                // Se o toggle estiver ativo, busca EXCLUSIVAMENTE no ID Anterior (previousTicketId)
+                matchesSearch = ticket.previousTicketId ? ticket.previousTicketId.toLowerCase().includes(term) : false;
+            } else {
+                // Busca Padrão: ID, ARD, Cidade
+                matchesSearch = (ticket.ardName || '').toLowerCase().includes(term) || 
+                                (ticket.city || '').toLowerCase().includes(term) ||
+                                (ticket.id || '').toLowerCase().includes(term);
+            }
         }
 
         return matchesType && matchesStatus && matchesSearch && matchesDate;
@@ -219,13 +223,22 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
       reader.readAsText(file);
   };
 
-  const isSlaBreached = (ticket: Ticket) => {
-    if (ticket.currentStatus === TicketStatus.APROVADO || ticket.currentStatus === TicketStatus.CANCELADO || ticket.currentStatus === TicketStatus.DEVOLVIDO) return false;
-    if (ticket.history.length === 0) return false;
+  const getSlaInfo = (ticket: Ticket) => {
+    if (ticket.currentStatus === TicketStatus.APROVADO || ticket.currentStatus === TicketStatus.CANCELADO || ticket.currentStatus === TicketStatus.DEVOLVIDO) return null;
+    if (ticket.history.length === 0) return null;
+    
     const lastUpdateDate = new Date(ticket.history[ticket.history.length - 1].date).getTime();
     const now = new Date().getTime();
-    const hoursDiff = (now - lastUpdateDate) / (1000 * 60 * 60);
-    return hoursDiff > 48;
+    const diffHours = (now - lastUpdateDate) / (1000 * 60 * 60);
+    
+    if (diffHours > 48) {
+        // Formatar tempo de estouro
+        const days = Math.floor(diffHours / 24);
+        const hours = Math.floor(diffHours % 24);
+        const durationStr = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+        return { isBreached: true, duration: durationStr };
+    }
+    return null;
   };
 
   const getStatusBadge = (status: TicketStatus) => {
@@ -246,8 +259,10 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
       );
   };
 
+  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
   return (
-    <div className="bg-white shadow rounded-lg overflow-hidden flex flex-col h-full">
+    <div className="bg-white shadow rounded-lg overflow-hidden flex flex-col h-full pb-20 md:pb-0">
       {/* Filters Header */}
       <div className="p-4 border-b border-slate-200 flex flex-col gap-4">
         
@@ -259,7 +274,7 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
                 </div>
                 <input 
                     type="text"
-                    placeholder="Buscar por ID, ARD ou Cidade..."
+                    placeholder={searchSubstitute ? "Digite o ID do ticket anterior..." : "Buscar por ID, ARD ou Cidade..."}
                     className="pl-10 block w-full rounded-md border-slate-300 border p-2 shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
@@ -336,4 +351,140 @@ export const TicketList: React.FC<TicketListProps> = ({ tickets, onViewDetail, o
 
                 <Button variant="primary" size="sm" onClick={handleExport} className="flex-1 sm:flex-none">
                      <span className="flex items-center" title="Exportar">
-                        <Download className="h-4 w-4 mr
+                        <Download className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Exportar</span>
+                     </span>
+                </Button>
+            </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto custom-scrollbar">
+        {/* Desktop View */}
+        <table className="min-w-full divide-y divide-slate-200 hidden md:table">
+          <thead className="bg-slate-50 sticky top-0 z-10">
+            <tr>
+              <th scope="col" onClick={() => requestSort('id')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 select-none">
+                 <div className="flex items-center">ID {getSortIcon('id')}</div>
+              </th>
+              <th scope="col" onClick={() => requestSort('ardName')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 select-none">
+                 <div className="flex items-center">Local / Tipo {getSortIcon('ardName')}</div>
+              </th>
+              <th scope="col" onClick={() => requestSort('requester')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 select-none">
+                 <div className="flex items-center">Info {getSortIcon('requester')}</div>
+              </th>
+              <th scope="col" onClick={() => requestSort('value')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 select-none">
+                 <div className="flex items-center">Valor {getSortIcon('value')}</div>
+              </th>
+              <th scope="col" onClick={() => requestSort('currentStatus')} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 select-none">
+                 <div className="flex items-center">Status {getSortIcon('currentStatus')}</div>
+              </th>
+              <th scope="col" className="relative px-6 py-3">
+                <span className="sr-only">Ações</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-slate-200">
+            {filteredTickets.map((ticket) => {
+              const slaInfo = getSlaInfo(ticket);
+              return (
+              <tr key={ticket.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => onViewDetail(ticket)}>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm font-bold text-slate-900">{ticket.id}</div>
+                  <div className="text-xs text-slate-500">{new Date(ticket.entryDate).toLocaleDateString()}</div>
+                  {ticket.isSubstitute && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-800 mt-1">
+                          Substituto
+                      </span>
+                  )}
+                </td>
+                <td className="px-6 py-4">
+                  <div className="text-sm font-medium text-slate-900">{ticket.ardName}</div>
+                  <div className="text-sm text-slate-500">{ticket.city} - {ticket.uf}</div>
+                  <div className="text-xs text-slate-400 mt-1">{ticket.type}</div>
+                </td>
+                <td className="px-6 py-4">
+                    <div className="text-sm text-slate-900">{ticket.requester}</div>
+                    {ticket.client && <div className="text-xs text-slate-500">Cli: {ticket.client}</div>}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm font-mono font-medium text-slate-900">
+                    {formatCurrency(ticket.value)}
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {getStatusBadge(ticket.currentStatus)}
+                  {slaInfo && (
+                      <div className="flex items-center text-red-600 text-xs font-bold mt-1" title="SLA Estourado">
+                          <span>
+                            <AlertTriangle className="h-3 w-3 mr-1 inline" />
+                            SLA: {slaInfo.duration}
+                          </span>
+                      </div>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <div className="flex justify-end space-x-2">
+                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onViewDetail(ticket); }}>
+                        <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={(e) => { e.stopPropagation(); onDelete(ticket.id); }}>
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            )})}
+          </tbody>
+        </table>
+
+        {/* Mobile View (Cards) */}
+        <div className="md:hidden space-y-4 p-4 pb-24">
+            {filteredTickets.map(ticket => {
+                 const slaInfo = getSlaInfo(ticket);
+                 return (
+                <div key={ticket.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200" onClick={() => onViewDetail(ticket)}>
+                    <div className="flex justify-between items-start mb-2">
+                        <div>
+                            <span className="font-bold text-slate-900">{ticket.id}</span>
+                            {ticket.isSubstitute && <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-800 px-1 rounded">Sub</span>}
+                        </div>
+                        {getStatusBadge(ticket.currentStatus)}
+                    </div>
+                    
+                    <div className="space-y-1 mb-3">
+                        <p className="text-sm font-medium text-slate-800">{ticket.ardName}</p>
+                        <p className="text-xs text-slate-500">{ticket.city} - {ticket.uf}</p>
+                        <div className="flex justify-between items-center mt-2">
+                             <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{ticket.type}</span>
+                             <span className="font-mono text-sm font-bold text-slate-900">{formatCurrency(ticket.value)}</span>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+                        <div className="text-xs text-slate-500">
+                           {new Date(ticket.entryDate).toLocaleDateString()}
+                           {slaInfo && (
+                                <span className="ml-2 text-red-600 font-bold flex items-center">
+                                    <AlertTriangle className="h-3 w-3 mr-1" /> SLA: {slaInfo.duration}
+                                </span>
+                           )}
+                        </div>
+                        <div className="flex space-x-2">
+                             <button onClick={(e) => { e.stopPropagation(); onDelete(ticket.id); }} className="text-red-500 p-1">
+                                <Trash2 className="h-4 w-4" />
+                             </button>
+                        </div>
+                    </div>
+                </div>
+            )})}
+        </div>
+
+        {filteredTickets.length === 0 && (
+            <div className="p-12 text-center text-slate-500">
+                <p>Nenhum ticket encontrado com os filtros atuais.</p>
+            </div>
+        )}
+      </div>
+    </div>
+  );
+};

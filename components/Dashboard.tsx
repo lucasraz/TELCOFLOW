@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Ticket, TicketType, TicketStatus } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
-import { DollarSign, FileText, Clock, AlertOctagon, Filter } from 'lucide-react';
+import { DollarSign, FileText, Clock, AlertOctagon, Filter, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 interface DashboardProps {
   tickets: Ticket[];
@@ -12,6 +12,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
   const [dateRange, setDateRange] = useState<'all' | '30days' | '7days'>('all');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterSLA, setFilterSLA] = useState(false);
   const [showContent, setShowContent] = useState(false);
 
   // Effect to trigger entry animations
@@ -42,8 +43,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
         result = result.filter(t => t.currentStatus === filterStatus);
     }
 
+    // Filter by SLA Breach
+    if (filterSLA) {
+        const now = new Date().getTime();
+        result = result.filter(t => {
+            // Ignora status finalizados ou devolvidos (não contam para SLA)
+            if (t.currentStatus === TicketStatus.APROVADO || 
+                t.currentStatus === TicketStatus.CANCELADO || 
+                t.currentStatus === TicketStatus.DEVOLVIDO) {
+                return false;
+            }
+            
+            const lastHistory = t.history && t.history.length > 0 ? t.history[t.history.length - 1] : null;
+            if (!lastHistory) return false;
+
+            const lastUpdateDate = new Date(lastHistory.date).getTime();
+            const diffHours = (now - lastUpdateDate) / (1000 * 60 * 60);
+
+            return diffHours > 48;
+        });
+    }
+
     return result;
-  }, [tickets, dateRange, filterType, filterStatus]);
+  }, [tickets, dateRange, filterType, filterStatus, filterSLA]);
 
   const stats = useMemo(() => {
     const approvedValue = filteredTickets
@@ -62,6 +84,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
     const approvedCount = filteredTickets.filter(t => t.currentStatus === TicketStatus.APROVADO).length;
     const pendingCount = filteredTickets.filter(t => t.currentStatus !== TicketStatus.APROVADO && t.currentStatus !== TicketStatus.CANCELADO).length;
 
+    // SLA Calculation (within the filtered set)
+    const slaBreachedCount = filteredTickets.filter(t => {
+        if (t.currentStatus === TicketStatus.APROVADO || 
+            t.currentStatus === TicketStatus.CANCELADO || 
+            t.currentStatus === TicketStatus.DEVOLVIDO) {
+            return false;
+        }
+        
+        const lastHistory = t.history && t.history.length > 0 ? t.history[t.history.length - 1] : null;
+        if (!lastHistory) return false;
+
+        const lastUpdateDate = new Date(lastHistory.date).getTime();
+        const now = new Date().getTime();
+        const diffHours = (now - lastUpdateDate) / (1000 * 60 * 60);
+
+        return diffHours > 48;
+    }).length;
+
     const typeData = [
       { name: 'B2B', value: filteredTickets.filter(t => t.type === TicketType.B2B).length },
       { name: 'Desligue Cobre', value: filteredTickets.filter(t => t.type === TicketType.DESLIGUE_COBRE).length },
@@ -73,7 +113,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
       valor: filteredTickets.filter(t => t.currentStatus === status).reduce((acc, t) => acc + t.value, 0)
     }));
 
-    return { approvedValue, pendingValue, cancelledValue, totalTickets, approvedCount, pendingCount, typeData, statusData };
+    return { approvedValue, pendingValue, cancelledValue, totalTickets, approvedCount, pendingCount, slaBreachedCount, typeData, statusData };
   }, [filteredTickets]);
 
   const PIE_COLORS = ['#2563EB', '#F59E0B'];
@@ -119,8 +159,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
          <div className="flex justify-end mb-4">
              <div className="h-8 w-48 bg-slate-200 rounded animate-pulse"></div>
          </div>
-         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-5">
-            {[...Array(5)].map((_, i) => <SkeletonCard key={i} />)}
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+            {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
          </div>
          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <SkeletonChart />
@@ -134,9 +174,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
   }
 
   return (
-    <div className={`space-y-6 pb-20 transition-opacity duration-700 ease-in-out ${showContent ? 'opacity-100' : 'opacity-0'}`}>
+    <div className={`space-y-6 pb-24 md:pb-0 transition-opacity duration-700 ease-in-out ${showContent ? 'opacity-100' : 'opacity-0'}`}>
       {/* Filtros */}
       <div className="flex flex-wrap justify-end mb-4 gap-2">
+        <button
+           onClick={() => setFilterSLA(!filterSLA)}
+           className={`rounded-lg shadow-sm py-1 px-3 flex items-center space-x-2 border transition-all ${filterSLA ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+           title="Mostrar apenas tickets com SLA estourado"
+        >
+           <AlertTriangle className={`h-4 w-4 ${filterSLA ? 'fill-red-100 text-red-600' : 'text-slate-400'}`} />
+           <span className="text-sm font-medium">SLA Estourado</span>
+        </button>
+
         <div className="bg-white rounded-lg shadow-sm p-1 flex items-center space-x-1 border border-slate-200 transition-shadow hover:shadow-md">
            <Filter className="h-4 w-4 text-slate-500 ml-2 mr-1" />
            <select 
@@ -175,7 +224,66 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-5">
+      {/* Cards de Métricas */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+        
+        {/* SLA Card */}
+        <div className={`bg-white overflow-hidden shadow rounded-lg border-l-4 p-4 md:p-5 transform transition-transform duration-300 hover:scale-[1.02] hover:shadow-lg ${stats.slaBreachedCount > 0 ? 'border-red-600 bg-red-50' : 'border-slate-400'}`}>
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className={`p-2 rounded-full ${stats.slaBreachedCount > 0 ? 'bg-red-100 animate-pulse' : 'bg-slate-100'}`}>
+                  {stats.slaBreachedCount > 0 ? 
+                    <AlertTriangle className={`h-6 w-6 ${stats.slaBreachedCount > 0 ? 'text-red-600' : 'text-slate-500'}`} /> : 
+                    <CheckCircle2 className="h-6 w-6 text-green-600" />
+                  }
+                </div>
+              </div>
+              <div className="ml-3 w-0 flex-1">
+                <dl>
+                  <dt className={`text-xs font-medium truncate uppercase ${stats.slaBreachedCount > 0 ? 'text-red-700 font-bold' : 'text-slate-500'}`}>
+                      Alertas SLA (+48h)
+                  </dt>
+                  <dd className={`text-lg font-bold ${stats.slaBreachedCount > 0 ? 'text-red-700' : 'text-slate-900'}`}>
+                    {stats.slaBreachedCount} {stats.slaBreachedCount === 1 ? 'Ticket' : 'Tickets'}
+                  </dd>
+                </dl>
+              </div>
+            </div>
+        </div>
+
+        {/* Volume Total Card */}
+        <div className="bg-white overflow-hidden shadow rounded-lg p-4 md:p-5 transform transition-transform duration-300 hover:scale-[1.02] hover:shadow-lg border-l-4 border-slate-200">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="p-2 bg-slate-50 rounded-full">
+                  <FileText className="h-6 w-6 text-slate-400" />
+                </div>
+              </div>
+              <div className="ml-3 w-0 flex-1">
+                <dl>
+                  <dt className="text-xs font-medium text-slate-500 truncate uppercase">Volume Total</dt>
+                  <dd className="text-lg font-bold text-slate-900">{stats.totalTickets}</dd>
+                </dl>
+              </div>
+            </div>
+        </div>
+
+        {/* Contadores Aprovados/Pendentes */}
+        <div className="bg-white overflow-hidden shadow rounded-lg p-4 md:p-5 transform transition-transform duration-300 hover:scale-[1.02] hover:shadow-lg border-l-4 border-slate-200">
+             <div className="flex items-center justify-between">
+                <div className="text-center">
+                    <span className="block text-xl md:text-2xl font-bold text-green-600">{stats.approvedCount}</span>
+                    <span className="text-[10px] md:text-xs text-slate-500 uppercase">Aprovados</span>
+                </div>
+                <div className="h-8 w-px bg-slate-200"></div>
+                <div className="text-center">
+                    <span className="block text-xl md:text-2xl font-bold text-yellow-600">{stats.pendingCount}</span>
+                    <span className="text-[10px] md:text-xs text-slate-500 uppercase">Na Fila</span>
+                </div>
+             </div>
+        </div>
+
+        {/* Valores Financeiros */}
         <div className="bg-white overflow-hidden shadow rounded-lg border-l-4 border-green-500 p-4 md:p-5 transform transition-transform duration-300 hover:scale-[1.02] hover:shadow-lg">
             <div className="flex items-center">
               <div className="flex-shrink-0">
@@ -185,7 +293,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
               </div>
               <div className="ml-3 w-0 flex-1">
                 <dl>
-                  <dt className="text-xs font-medium text-slate-500 truncate uppercase">Aprovado</dt>
+                  <dt className="text-xs font-medium text-slate-500 truncate uppercase">Aprovado ($)</dt>
                   <dd className="text-lg font-bold text-slate-900">
                     {formatCurrency(stats.approvedValue)}
                   </dd>
@@ -203,7 +311,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
               </div>
               <div className="ml-3 w-0 flex-1">
                 <dl>
-                  <dt className="text-xs font-medium text-slate-500 truncate uppercase">Pendente</dt>
+                  <dt className="text-xs font-medium text-slate-500 truncate uppercase">Pendente ($)</dt>
                   <dd className="text-lg font-bold text-slate-900">
                     {formatCurrency(stats.pendingValue)}
                   </dd>
@@ -221,43 +329,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, isLoading = false
               </div>
               <div className="ml-3 w-0 flex-1">
                 <dl>
-                  <dt className="text-xs font-medium text-slate-500 truncate uppercase">Cancelado</dt>
+                  <dt className="text-xs font-medium text-slate-500 truncate uppercase">Cancelado ($)</dt>
                   <dd className="text-lg font-bold text-slate-900">
                     {formatCurrency(stats.cancelledValue)}
                   </dd>
                 </dl>
               </div>
             </div>
-        </div>
-
-        <div className="bg-white overflow-hidden shadow rounded-lg p-4 md:p-5 transform transition-transform duration-300 hover:scale-[1.02] hover:shadow-lg">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="p-2 bg-slate-50 rounded-full">
-                  <FileText className="h-6 w-6 text-slate-400" />
-                </div>
-              </div>
-              <div className="ml-3 w-0 flex-1">
-                <dl>
-                  <dt className="text-xs font-medium text-slate-500 truncate uppercase">Volume Total</dt>
-                  <dd className="text-lg font-bold text-slate-900">{stats.totalTickets}</dd>
-                </dl>
-              </div>
-            </div>
-        </div>
-
-        <div className="bg-white overflow-hidden shadow rounded-lg p-4 md:p-5 transform transition-transform duration-300 hover:scale-[1.02] hover:shadow-lg">
-             <div className="flex items-center justify-between">
-                <div className="text-center">
-                    <span className="block text-xl md:text-2xl font-bold text-green-600">{stats.approvedCount}</span>
-                    <span className="text-[10px] md:text-xs text-slate-500 uppercase">Aprovados</span>
-                </div>
-                <div className="h-8 w-px bg-slate-200"></div>
-                <div className="text-center">
-                    <span className="block text-xl md:text-2xl font-bold text-yellow-600">{stats.pendingCount}</span>
-                    <span className="text-[10px] md:text-xs text-slate-500 uppercase">Na Fila</span>
-                </div>
-             </div>
         </div>
       </div>
 

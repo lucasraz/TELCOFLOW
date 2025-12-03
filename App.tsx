@@ -18,29 +18,80 @@ const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Check active session on mount
+  // Check active session on mount and listen for changes
   useEffect(() => {
-    const checkSession = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session && session.user) {
-             const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+    // Função auxiliar para carregar perfil
+    const loadUserProfile = async (userId: string, email?: string) => {
+         try {
+             const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+             
+             if (error) {
+                 console.error("Erro ao carregar perfil:", error);
+                 return;
+             }
+
              if (profile) {
                  setUser({
-                     id: session.user.id,
-                     email: session.user.email,
+                     id: userId,
+                     email: email,
                      name: profile.name,
                      ra: profile.ra,
                      role: profile.role,
                      networkLogin: profile.network_login
                  });
-                 fetchTickets();
+                 // Carrega tickets apenas após ter o usuário
+                 fetchTickets(); 
              }
+         } catch (e) {
+             console.error("Exceção ao carregar perfil:", e);
+         }
+    };
+
+    // 1. Check initial session
+    const checkSession = async () => {
+        try {
+            const { data: { session }, error } = await supabase.auth.getSession();
+            
+            if (error) {
+                // Se der erro de refresh token, forçamos logout local para pedir login novamente
+                console.warn("Sessão inválida ou expirada:", error.message);
+                await supabase.auth.signOut();
+                setUser(null);
+                return;
+            }
+
+            if (session && session.user) {
+                await loadUserProfile(session.user.id, session.user.email);
+            }
+        } catch (err) {
+            console.error("Erro inesperado na sessão:", err);
+            setUser(null);
         }
     };
+
     checkSession();
+
+    // 2. Listen for auth changes (sign in, sign out, token refresh, auto-logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+         await loadUserProfile(session.user.id, session.user.email);
+      } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+         setUser(null);
+         setTickets([]);
+         setCurrentView('dashboard');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchTickets = async () => {
+      // Evita fetch se não tiver usuário logado (redundância de segurança)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
       setLoading(true);
       const { data: ticketsData, error } = await supabase
         .from('tickets')
@@ -90,15 +141,15 @@ const App: React.FC = () => {
   };
 
   const handleLogin = (loggedInUser: User) => {
-    setUser(loggedInUser);
-    fetchTickets();
+    // O onAuthStateChange já vai lidar com isso, mas podemos manter para feedback imediato se necessário
+    // setUser(loggedInUser);
+    // fetchTickets();
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setTickets([]);
-    setCurrentView('dashboard');
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error("Erro ao sair:", error);
+    // O onAuthStateChange vai limpar o estado
   };
 
   const handleAddTicket = async (ticket: Ticket, attachmentFile: File | null) => {
@@ -447,7 +498,7 @@ const App: React.FC = () => {
            </button>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 relative">
             <header className="mb-6 md:mb-8 flex flex-col md:flex-row md:justify-between md:items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
                 <div className="mb-2 md:mb-0">
                     <h2 className="text-xl md:text-2xl font-bold text-slate-800">

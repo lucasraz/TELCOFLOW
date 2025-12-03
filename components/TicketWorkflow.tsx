@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Ticket, TicketStatus, User, TicketType } from '../types';
 import { Button } from './Button';
-import { X, Clock, CheckCircle, AlertCircle, Trash2, ZoomIn, RefreshCw, Download, MapPin, DollarSign, TrendingDown, TrendingUp, ExternalLink, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
+import { X, Clock, CheckCircle, AlertCircle, Trash2, ZoomIn, RefreshCw, Download, MapPin, DollarSign, TrendingDown, TrendingUp, ExternalLink, FileText, Image as ImageIcon, Pencil, AlertTriangle } from 'lucide-react';
 import { STATES_BR } from '../constants';
 
 interface TicketWorkflowProps {
@@ -55,6 +55,22 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
       }
       return 0;
   }, [ticket.value, previousTicket]);
+
+  const slaInfo = useMemo(() => {
+    if (ticket.currentStatus === TicketStatus.APROVADO || ticket.currentStatus === TicketStatus.CANCELADO || ticket.currentStatus === TicketStatus.DEVOLVIDO) return null;
+    if (ticket.history.length === 0) return null;
+    
+    const lastUpdateDate = new Date(ticket.history[ticket.history.length - 1].date).getTime();
+    const now = new Date().getTime();
+    const diffHours = (now - lastUpdateDate) / (1000 * 60 * 60);
+    
+    if (diffHours > 48) {
+        const days = Math.floor(diffHours / 24);
+        const hours = Math.floor(diffHours % 24);
+        return `${days > 0 ? `${days}d ` : ''}${hours}h`;
+    }
+    return null;
+  }, [ticket]);
 
   const handleUpdate = async () => {
     setLoading(true);
@@ -121,6 +137,11 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
             <h2 className="text-lg md:text-xl font-bold text-slate-900 flex items-center flex-wrap gap-2">
                 Fluxo de Trabalho
                 {ticket.isSubstitute && <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full border border-yellow-300">Substituto</span>}
+                {slaInfo && (
+                     <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full border border-red-300 flex items-center font-bold animate-pulse">
+                         <AlertTriangle className="h-3 w-3 mr-1" /> SLA: {slaInfo}
+                     </span>
+                )}
             </h2>
             <p className="text-sm text-slate-500 font-mono">ID: {ticket.id}</p>
           </div>
@@ -140,7 +161,7 @@ export const TicketWorkflow: React.FC<TicketWorkflowProps> = ({ ticket, tickets,
           </div>
         </div>
 
-        <div className="p-4 md:p-6 flex-1 overflow-y-auto">
+        <div className="p-4 md:p-6 flex-1 overflow-y-auto pb-24">
           
           {/* Ticket Info Card OR Edit Form */}
           {isEditing ? (
